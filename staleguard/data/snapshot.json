@@ -1,0 +1,48 @@
+{
+  "_note": "Offline snapshot corpus used when no TAVILY_API_KEY is set. Snippets are short paraphrases of the linked public pages, captured in late 2025 for the bundled demo. Live mode replaces this with real-time Tavily search.",
+  "captured": "2025-11",
+  "results": [
+    {
+      "title": "Python 3.14.0 release",
+      "url": "https://www.python.org/downloads/release/python-3140/",
+      "content": "Python 3.14.0 is the newest major release of the Python programming language, released in October 2025. It follows Python 3.13 and Python 3.12.",
+      "published_date": "2025-10-07",
+      "keywords": ["python", "cpython"]
+    },
+    {
+      "title": "Status of Python versions",
+      "url": "https://devguide.python.org/versions/",
+      "content": "Python 3.14 is the latest stable feature release. Python 3.13 and Python 3.12 receive bugfix or security updates; Python 3.11 is in security-fixes-only mode.",
+      "published_date": "2025-10-08",
+      "keywords": ["python", "cpython"]
+    },
+    {
+      "title": "React v19 - React blog",
+      "url": "https://react.dev/blog/2024/12/05/react-19",
+      "content": "React v19 is now available on npm as the new stable major version, bringing Actions, new hooks and Server Components support.",
+      "published_date": "2024-12-05",
+      "keywords": ["react", "reactjs"]
+    },
+    {
+      "title": "Node.js previous releases",
+      "url": "https://nodejs.org/en/about/previous-releases",
+      "content": "Node.js 18 has reached end-of-life and no longer receives security updates. As of late 2025, Node.js 24 is the Active LTS line and Node.js 22 is in Maintenance LTS.",
+      "published_date": "2025-10-28",
+      "keywords": ["node.js", "nodejs", "node", "lts"]
+    },
+    {
+      "title": "AI Act enters into force - European Commission",
+      "url": "https://commission.europa.eu/news-and-media/news/ai-act-enters-force-2024-08-01_en",
+      "content": "The EU Artificial Intelligence Act (AI Act) entered into force on 1 August 2024, with obligations phasing in over the following years.",
+      "published_date": "2024-08-01",
+      "keywords": ["eu", "ai act", "act", "european", "regulation"]
+    },
+    {
+      "title": "GitHub Copilot plans and pricing",
+      "url": "https://github.com/features/copilot/plans",
+      "content": "GitHub Copilot Pro (formerly Copilot Individual) costs $10 per month or $100 per year for individual developers; a limited free tier is also available.",
+      "published_date": null,
+      "keywords": ["copilot", "github"]
+    }
+  ]
+}

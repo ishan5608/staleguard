@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>StaleGuard — freshness check for AI answers</title>
+<style>
+  :root {
+    --paper: #f6f3ec; --card: #fffdf8; --ink: #1d1b16; --muted: #6b665b; --line: #e2dccd;
+    --fresh: #1f7a4d; --fresh-bg: #e3f2e8; --stale: #b3261e; --stale-bg: #fbe4e1;
+    --part: #a86400; --part-bg: #fbefd9; --unv: #5b6472; --unv-bg: #eceef1; --accent: #2b4acb;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.55 var(--sans); }
+  header { border-bottom: 2px solid var(--ink); padding: 18px 28px 12px; display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; }
+  header h1 { font: 700 30px/1 var(--serif); margin: 0; letter-spacing: -0.5px; }
+  header h1 span { color: var(--stale); }
+  header p { margin: 0; color: var(--muted); font-style: italic; font-family: var(--serif); }
+  #mode { margin-left: auto; font: 12px var(--mono); padding: 4px 10px; border: 1px solid var(--line); border-radius: 99px; background: var(--card); }
+  main { display: grid; grid-template-columns: minmax(320px, 420px) 1fr; gap: 24px; padding: 24px 28px; max-width: 1400px; margin: 0 auto; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+  label { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 12px 0 6px; }
+  textarea, input { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font: 14px/1.5 var(--sans); background: #fff; color: var(--ink); }
+  textarea { min-height: 220px; resize: vertical; }
+  textarea:focus, input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .row { display: flex; gap: 10px; margin-top: 14px; }
+  button { font: 600 14px var(--sans); border-radius: 8px; padding: 10px 16px; cursor: pointer; border: 1px solid var(--ink); background: var(--ink); color: #fff; }
+  button.ghost { background: transparent; color: var(--ink); }
+  button:disabled { opacity: .5; cursor: progress; }
+  .hint { color: var(--muted); font-size: 13px; margin-top: 12px; }
+  .empty { color: var(--muted); font-family: var(--serif); font-size: 18px; text-align: center; padding: 70px 20px; }
+  .summary { display: flex; gap: 22px; align-items: center; flex-wrap: wrap; }
+  .ring { width: 116px; height: 116px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; }
+  .ring div { width: 92px; height: 92px; border-radius: 50%; background: var(--card); display: grid; place-items: center; text-align: center; }
+  .ring b { font: 700 32px/1 var(--serif); display: block; }
+  .ring small { font-size: 11px; color: var(--muted); }
+  .grade { font: 700 26px var(--serif); margin: 0 0 6px; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { font: 12px var(--mono); padding: 3px 9px; border-radius: 99px; border: 1px solid var(--line); background: #fff; }
+  .banner { margin-top: 12px; font-size: 13px; padding: 8px 12px; border-radius: 8px; background: var(--part-bg); color: var(--part); }
+  h2 { font: 700 19px var(--serif); margin: 26px 0 10px; }
+  .answer { font: 17px/1.75 var(--serif); }
+  mark { padding: 1px 2px; border-radius: 3px; cursor: pointer; border-bottom: 2px solid; }
+  mark.current { background: var(--fresh-bg); border-color: var(--fresh); }
+  mark.outdated { background: var(--stale-bg); border-color: var(--stale); }
+  mark.partially_current { background: var(--part-bg); border-color: var(--part); }
+  mark.unverified { background: var(--unv-bg); border-color: var(--unv); }
+  .claims { display: grid; gap: 12px; }
+  .claim { border: 1px solid var(--line); border-left: 5px solid var(--unv); border-radius: 8px; padding: 12px 14px; background: #fff; scroll-margin-top: 16px; }
+  .claim.current { border-left-color: var(--fresh); } .claim.outdated { border-left-color: var(--stale); }
+  .claim.partially_current { border-left-color: var(--part); } .claim.skipped { opacity: .65; }
+  .claim.flash { box-shadow: 0 0 0 3px var(--accent); }
+  .ch { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .verdict { font: 700 11px var(--mono); text-transform: uppercase; padding: 3px 8px; border-radius: 4px; }
+  .v-current { background: var(--fresh-bg); color: var(--fresh); } .v-outdated { background: var(--stale-bg); color: var(--stale); }
+  .v-partially_current { background: var(--part-bg); color: var(--part); } .v-unverified, .v-skipped { background: var(--unv-bg); color: var(--unv); }
+  .cat { font: 11px var(--mono); color: var(--muted); }
+  .score { margin-left: auto; font: 700 18px var(--serif); }
+  .bar { height: 5px; background: var(--line); border-radius: 3px; margin: 8px 0; overflow: hidden; }
+  .bar i { display: block; height: 100%; }
+  .ctext { margin: 6px 0; }
+  .now { font-weight: 600; color: var(--stale); }
+  .expl { color: var(--muted); font-size: 14px; }
+  details { margin-top: 8px; font-size: 13px; }
+  summary { cursor: pointer; color: var(--accent); }
+  .ev { padding: 6px 0; border-top: 1px dashed var(--line); }
+  .ev a { color: var(--ink); font-weight: 600; text-decoration: none; } .ev a:hover { text-decoration: underline; }
+  .st { font: 10px var(--mono); text-transform: uppercase; padding: 1px 5px; border-radius: 3px; margin-right: 6px; }
+  .st-supports { background: var(--fresh-bg); color: var(--fresh); } .st-contradicts { background: var(--stale-bg); color: var(--stale); } .st-neutral { background: var(--unv-bg); color: var(--unv); }
+  .bd { font: 12px var(--mono); color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; }
+  .refreshed { white-space: pre-wrap; font: 16px/1.7 var(--serif); background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
+  table { width: 100%; border-collapse: collapse; font: 12px var(--mono); }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  .err { color: var(--stale); }
+  .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid #fff; border-right-color: transparent; border-radius: 50%; animation: s .7s linear infinite; vertical-align: -2px; margin-right: 6px; }
+  @keyframes s { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Stale<span>Guard</span></h1>
+  <p>Find the facts in an AI answer that have quietly gone out of date.</p>
+  <div id="mode">checking…</div>
+</header>
+<main>
+  <section class="panel">
+    <label for="q">Question (optional)</label>
+    <input id="q" placeholder="What was the user asking?" />
+    <label for="a">AI-generated answer to audit</label>
+    <textarea id="a" placeholder="Paste an LLM answer that mentions prices, versions, laws, people in roles…"></textarea>
+    <label for="kd">Answer's knowledge date</label>
+    <input id="kd" placeholder="e.g. 2024-06 (model training cutoff). Blank = default" />
+    <div class="row">
+      <button id="go">Check freshness</button>
+      <button class="ghost" id="demo">Load demo</button>
+    </div>
+    <p class="hint">Claims are extracted and judged by LLMs routed through <b>Bifrost</b> (with provider fallbacks), and re-verified against live web sources with <b>Tavily</b>.</p>
+  </section>
+  <section class="panel" id="out"><div class="empty">Paste an answer and press <b>Check freshness</b>.</div></section>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const color = n => n >= 85 ? "var(--fresh)" : n >= 65 ? "#5f8f2f" : n >= 40 ? "var(--part)" : "var(--stale)";
+const label = v => ({current:"Current", outdated:"Outdated", partially_current:"Partly current", unverified:"Unverified", skipped:"Timeless"}[v] || v);
+let MODE = "";
+
+fetch("/api/health").then(r => r.json()).then(h => {
+  MODE = h.mode;
+  $("#mode").textContent = h.mode === "live"
+    ? `LIVE · Bifrost ${h.bifrost} · Tavily on`
+    : "OFFLINE · snapshot corpus (no API keys)";
+}).catch(() => $("#mode").textContent = "server unreachable");
+
+$("#demo").onclick = async () => {
+  const d = await (await fetch("/api/demo")).json();
+  $("#q").value = d.question; $("#a").value = d.answer; $("#kd").value = "2024-06";
+};
+
+$("#go").onclick = async () => {
+  const answer = $("#a").value.trim();
+  if (!answer) { $("#a").focus(); return; }
+  const btn = $("#go"); btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Checking…';
+  $("#out").innerHTML = '<div class="empty">Extracting claims and re-verifying them against the live web…</div>';
+  try {
+    const r = await fetch("/api/check", { method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ answer, question: $("#q").value, knowledge_date: $("#kd").value || null }) });
+    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+    render(await r.json());
+  } catch (e) {
+    $("#out").innerHTML = `<div class="empty err">Check failed: ${esc(e.message)}</div>`;
+  } finally { btn.disabled = false; btn.textContent = "Check freshness"; }
+};
+
+function highlight(answer, claims) {
+  // place each claim's span once, longest first, avoiding overlaps
+  const marks = [];
+  for (const c of [...claims].sort((a, b) => (b.claim.span || "").length - (a.claim.span || "").length)) {
+    if (c.verdict === "skipped") continue;
+    const span = (c.claim.span || c.claim.text).trim();
+    let i = answer.indexOf(span);
+    if (i < 0) i = answer.indexOf(span.replace(/[.\s]+$/, ""));
+    if (i < 0) continue;
+    const end = i + span.length;
+    if (marks.some(m => i < m.end && end > m.start)) continue;
+    marks.push({ start: i, end, c });
+  }
+  marks.sort((a, b) => a.start - b.start);
+  let out = "", pos = 0;
+  for (const m of marks) {
+    out += esc(answer.slice(pos, m.start));
+    out += `<mark class="${m.c.verdict}" data-id="${m.c.claim.id}" title="${label(m.c.verdict)} · ${m.c.freshness}/100">${esc(answer.slice(m.start, m.end))}</mark>`;
+    pos = m.end;
+  }
+  return out + esc(answer.slice(pos));
+}
+
+function render(rep) {
+  const s = rep.stats, n = rep.overall_freshness;
+  const order = { outdated: 0, partially_current: 1, unverified: 2, current: 3, skipped: 4 };
+  const claims = [...rep.claims].sort((a, b) => order[a.verdict] - order[b.verdict] || a.freshness - b.freshness);
+  let h = `<div class="summary">
+    <div class="ring" style="background:conic-gradient(${color(n)} ${n * 3.6}deg, var(--line) 0)"><div><span><b>${n}</b><small>/100 fresh</small></span></div></div>
+    <div><p class="grade" style="color:${color(n)}">${esc(rep.grade)}</p>
+      <div class="chips">
+        <span class="chip">❌ ${s.outdated} outdated</span><span class="chip">🟡 ${s.partially_current} partial</span>
+        <span class="chip">✅ ${s.current} current</span><span class="chip">❔ ${s.unverified} unverified</span>
+        <span class="chip">${s.searches} Tavily searches</span><span class="chip">${s.llm_calls} LLM calls via Bifrost</span>
+        <span class="chip">${(s.elapsed_ms / 1000).toFixed(1)} s</span>
+      </div></div></div>`;
+  if (rep.mode !== "live") h += `<div class="banner">Offline mode: evidence comes from a bundled snapshot corpus, not a live search. Add a TAVILY_API_KEY and run Bifrost for real-time verification.</div>`;
+  h += `<h2>The answer, annotated</h2><div class="answer">${highlight(rep.answer, rep.claims)}</div>`;
+  h += `<h2>Claims</h2><div class="claims">`;
+  for (const c of claims) {
+    const b = c.breakdown;
+    h += `<div class="claim ${c.verdict}" id="claim-${c.claim.id}">
+      <div class="ch"><span class="verdict v-${c.verdict}">${label(c.verdict)}</span><span class="cat">${esc(c.claim.category)}${c.claim.subject ? " · " + esc(c.claim.subject) : ""}</span><span class="score" style="color:${color(c.freshness)}">${c.freshness}</span></div>
+      <div class="bar"><i style="width:${c.freshness}%;background:${color(c.freshness)}"></i></div>
+      <div class="ctext">${esc(c.claim.text)}</div>
+      ${c.current_value ? `<div class="now">Now: ${esc(c.current_value)}</div>` : ""}
+      ${c.explanation ? `<div class="expl">${esc(c.explanation)}</div>` : ""}
+      ${c.evidence.length ? `<details ${c.verdict === "outdated" ? "open" : ""}><summary>${c.evidence.length} source(s)</summary>${c.evidence.map((e, i) =>
+        `<div class="ev"><span class="st st-${e.stance}">${e.stance}</span>[${i + 1}] <a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.title || e.url)}</a> <span class="cat">${esc(e.published_date || "undated")}</span><div class="expl">${esc(e.snippet.slice(0, 260))}${e.snippet.length > 260 ? "…" : ""}</div></div>`).join("")}</details>` : ""}
+      ${c.verdict !== "skipped" ? `<div class="bd"><span>prior drift ${b.prior_risk}</span><span>recency ${b.evidence_recency}</span><span>agreement ${b.source_agreement}</span><span>confidence ${b.confidence}</span></div>` : ""}
+    </div>`;
+  }
+  h += `</div>`;
+  if (rep.refreshed_answer && rep.refreshed_answer !== rep.answer)
+    h += `<h2>Refreshed answer <button class="ghost" style="padding:4px 10px;font-size:12px" onclick="navigator.clipboard.writeText(document.querySelector('.refreshed').innerText)">Copy</button></h2><div class="refreshed">${esc(rep.refreshed_answer)}</div>`;
+  h += `<h2>Call trace</h2><table><tr><th>kind</th><th>purpose</th><th>target</th><th>served by</th><th>fallback</th><th>ms</th><th>tokens</th></tr>${rep.trace.map(t =>
+    `<tr><td>${t.kind}</td><td>${esc(t.purpose)}</td><td>${esc(t.target.slice(0, 70))}</td><td>${esc(t.served_by)}${t.cached ? " (cache)" : ""}</td><td>${t.fallback_used ? "yes" : ""}</td><td>${t.latency_ms}</td><td>${t.tokens || ""}</td></tr>${t.error ? `<tr><td></td><td colspan="6" class="err">${esc(t.error)}</td></tr>` : ""}`).join("")}</table>`;
+  $("#out").innerHTML = h;
+  document.querySelectorAll("mark[data-id]").forEach(m => m.onclick = () => {
+    const el = document.getElementById("claim-" + m.dataset.id);
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1200);
+  });
+}
+</script>
+</body>
+</html>

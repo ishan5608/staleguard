@@ -96,7 +96,8 @@ def test_offline_demo_end_to_end():
     py = next(r for r in rep.claims if "Python 3.11" in r.claim.text)
     assert py.verdict == Verdict.OUTDATED and py.current_value.startswith("3.1")
     assert rep.overall_freshness < 40 and rep.grade == "Stale"
-    assert "outdated" in rep.refreshed_answer and "Sources:" in rep.refreshed_answer
+    assert "Python 3.14" in rep.refreshed_answer and "React 19" in rep.refreshed_answer
+    assert "Python 3.11" not in rep.refreshed_answer and "Sources:" in rep.refreshed_answer
 
 
 def test_fresh_answer_scores_high():
@@ -206,3 +207,42 @@ def test_server_offline():
     assert r.status_code == 200 and r.json()["grade"] == "Stale"
     assert c.post("/api/check", json={"answer": "  "}).status_code == 400
     assert c.post("/v1/chat/completions", json={"model": "x", "messages": []}).status_code == 503
+
+
+# ------------------------------------------------------------ streaming + samples
+
+def test_stream_events_order():
+    g = StaleGuard(Settings(mode="offline"))
+
+    async def collect():
+        return [ev async for ev in g.check_stream(CheckRequest(answer=DEMO, knowledge_date="2024-06"))]
+
+    evs = run(collect())
+    types = [e["type"] for e in evs]
+    assert types[0] == "stage" and types[-1] == "report"
+    assert types.index("claims") < types.index("claim")
+    n_claims = len(next(e for e in evs if e["type"] == "claims")["claims"])
+    assert types.count("claim") == n_claims
+    assert evs[-1]["report"]["grade"] == "Stale"
+
+
+@pytest.mark.parametrize("sample_id,min_outdated", [("dev-stack", 4), ("subscriptions", 2), ("tech-news", 2)])
+def test_bundled_samples(sample_id, min_outdated):
+    samples = json.loads((Path(__file__).parent.parent / "examples" / "samples.json").read_text())
+    s = next(x for x in samples if x["id"] == sample_id)
+    rep = run(StaleGuard(Settings(mode="offline")).check(CheckRequest(answer=s["answer"], knowledge_date=s["knowledge_date"])))
+    assert sum(r.verdict == Verdict.OUTDATED for r in rep.claims) >= min_outdated
+    assert any(r.verdict == Verdict.CURRENT for r in rep.claims)
+
+
+def test_server_stream_and_samples():
+    from fastapi.testclient import TestClient
+    from staleguard import server
+    server.guard = StaleGuard(Settings(mode="offline"))
+    c = TestClient(server.app)
+    assert len(c.get("/api/samples").json()) >= 3
+    with c.stream("POST", "/api/check/stream", json={"answer": DEMO}) as r:
+        assert r.headers["content-type"].startswith("text/event-stream")
+        body = "".join(r.iter_text())
+    assert "event: claims" in body and "event: report" in body
+    assert c.post("/api/check/stream", json={"answer": " "}).status_code == 400

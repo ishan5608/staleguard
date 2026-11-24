@@ -4,7 +4,9 @@ Endpoints
   GET  /                      web UI
   GET  /api/health            mode, gateway reachability
   GET  /api/demo              the bundled demo answer
+  GET  /api/samples           sample answers (pricing, versions, regulation, companies)
   POST /api/check             audit an answer -> CheckReport
+  POST /api/check/stream      same, as Server-Sent Events (stage / claims / claim / report)
   POST /v1/chat/completions   OpenAI-compatible *guarded* completion: forwards the
                               request to Bifrost, audits the reply, and returns the
                               normal completion plus a `staleguard` report. Point any
@@ -19,7 +21,9 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+import json
+
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from .config import settings
 from .models import CheckReport, CheckRequest
@@ -64,6 +68,33 @@ async def demo():
     return {"question": "What stack should I use for a new web project in 2026?",
             "answer": (ROOT.parent / "examples" / "demo_answer.txt").read_text().strip()
             if (ROOT.parent / "examples" / "demo_answer.txt").exists() else ""}
+
+
+_SAMPLES = ROOT.parent / "examples" / "samples.json"
+
+
+@app.get("/api/samples")
+async def samples():
+    """Ready-made answers covering pricing, versions, regulation and company facts."""
+    return json.loads(_SAMPLES.read_text()) if _SAMPLES.exists() else []
+
+
+@app.post("/api/check/stream")
+async def check_stream(req: CheckRequest):
+    """Same as /api/check, streamed as Server-Sent Events so the UI can show progress
+    and each claim's verdict the moment it is ready."""
+    if not req.answer.strip():
+        raise HTTPException(400, "answer is empty")
+
+    async def events():
+        try:
+            async for ev in guard.check_stream(req):
+                yield f"event: {ev['type']}\ndata: {json.dumps(ev)}\n\n"
+        except Exception as e:  # surface failures to the client instead of a dropped stream
+            yield f"event: error\ndata: {json.dumps({'type': 'error', 'message': str(e)[:300]})}\n\n"
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.post("/api/check", response_model=CheckReport)

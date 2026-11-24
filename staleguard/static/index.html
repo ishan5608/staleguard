@@ -4,203 +4,588 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>StaleGuard — freshness check for AI answers</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23b3261e'/><path d='M10 16l4 4 8-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/></svg>" />
 <style>
   :root {
-    --paper: #f6f3ec; --card: #fffdf8; --ink: #1d1b16; --muted: #6b665b; --line: #e2dccd;
+    --paper: #f6f3ec; --card: #fffdf8; --sunk: #fff; --ink: #1d1b16; --muted: #6b665b; --line: #e2dccd; --line2: #d4ccb9;
     --fresh: #1f7a4d; --fresh-bg: #e3f2e8; --stale: #b3261e; --stale-bg: #fbe4e1;
-    --part: #a86400; --part-bg: #fbefd9; --unv: #5b6472; --unv-bg: #eceef1; --accent: #2b4acb;
+    --part: #9a5c00; --part-bg: #fbefd9; --unv: #5b6472; --unv-bg: #eceef1; --accent: #2b4acb; --accent-bg: #e8ecfb;
     --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
     --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --shadow: 0 1px 2px rgba(40,30,10,.06), 0 4px 14px rgba(40,30,10,.05);
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --paper: #15140f; --card: #1e1c17; --sunk: #191813; --ink: #ece7dc; --muted: #a39d90; --line: #34312a; --line2: #45413a;
+    --fresh: #5fc490; --fresh-bg: #17301f; --stale: #ff8a80; --stale-bg: #3a1b18;
+    --part: #f0b35a; --part-bg: #3a2b12; --unv: #a7b0bd; --unv-bg: #262a30; --accent: #8fa6ff; --accent-bg: #1f2540;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.25);
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.55 var(--sans); }
-  header { border-bottom: 2px solid var(--ink); padding: 18px 28px 12px; display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; }
-  header h1 { font: 700 30px/1 var(--serif); margin: 0; letter-spacing: -0.5px; }
+  button, input, textarea { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+  header { border-bottom: 2px solid var(--ink); padding: 14px 28px 10px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  header h1 { font: 700 28px/1 var(--serif); margin: 0; letter-spacing: -0.5px; }
   header h1 span { color: var(--stale); }
   header p { margin: 0; color: var(--muted); font-style: italic; font-family: var(--serif); }
-  #mode { margin-left: auto; font: 12px var(--mono); padding: 4px 10px; border: 1px solid var(--line); border-radius: 99px; background: var(--card); }
-  main { display: grid; grid-template-columns: minmax(320px, 420px) 1fr; gap: 24px; padding: 24px 28px; max-width: 1400px; margin: 0 auto; }
-  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
-  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
-  label { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 12px 0 6px; }
-  textarea, input { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font: 14px/1.5 var(--sans); background: #fff; color: var(--ink); }
-  textarea { min-height: 220px; resize: vertical; }
-  textarea:focus, input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
-  .row { display: flex; gap: 10px; margin-top: 14px; }
-  button { font: 600 14px var(--sans); border-radius: 8px; padding: 10px 16px; cursor: pointer; border: 1px solid var(--ink); background: var(--ink); color: #fff; }
-  button.ghost { background: transparent; color: var(--ink); }
-  button:disabled { opacity: .5; cursor: progress; }
-  .hint { color: var(--muted); font-size: 13px; margin-top: 12px; }
-  .empty { color: var(--muted); font-family: var(--serif); font-size: 18px; text-align: center; padding: 70px 20px; }
+  .hdr-right { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .pill { font: 12px var(--mono); padding: 4px 10px; border: 1px solid var(--line); border-radius: 99px; background: var(--card); display: inline-flex; align-items: center; gap: 6px; }
+  .pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--unv); display: inline-block; }
+  .pill.live i { background: var(--fresh); box-shadow: 0 0 0 3px var(--fresh-bg); }
+  .pill.off i { background: var(--part); }
+  .icon-btn { border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 5px 10px; cursor: pointer; font-size: 13px; }
+  .icon-btn:hover { border-color: var(--line2); }
+
+  main { display: grid; grid-template-columns: minmax(320px, 410px) minmax(0, 1fr); gap: 24px; padding: 22px 28px 40px; max-width: 1440px; margin: 0 auto; align-items: start; }
+  @media (max-width: 960px) { main { grid-template-columns: minmax(0, 1fr); padding: 16px; } header { padding: 12px 16px; } }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; box-shadow: var(--shadow); }
+  .input-panel { position: sticky; top: 16px; }
+  @media (max-width: 960px) { .input-panel { position: static; } }
+  label, .lbl { display: block; font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 14px 0 6px; font-weight: 600; }
+  .lbl:first-child { margin-top: 0; }
+  textarea, input[type=text], input[type=month] { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 14px; line-height: 1.5; background: var(--sunk); }
+  textarea { min-height: 200px; resize: vertical; }
+  .meta { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .samples { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip-btn { border: 1px solid var(--line); background: var(--sunk); border-radius: 99px; padding: 5px 12px; font-size: 13px; cursor: pointer; }
+  .chip-btn:hover, .chip-btn[aria-pressed=true] { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+  .kd-row { display: flex; gap: 8px; align-items: center; }
+  .kd-row input { flex: 1; }
+  .hint { color: var(--muted); font-size: 12.5px; margin: 6px 0 0; }
+  .actions { display: flex; gap: 10px; margin-top: 16px; align-items: center; }
+  .primary { font-weight: 600; border-radius: 8px; padding: 11px 18px; cursor: pointer; border: 1px solid var(--ink); background: var(--ink); color: var(--paper); flex: 1; }
+  .primary:disabled { opacity: .6; cursor: progress; }
+  .ghost { font-weight: 600; border-radius: 8px; padding: 10px 14px; cursor: pointer; border: 1px solid var(--line2); background: transparent; }
+  kbd { font: 11px var(--mono); border: 1px solid var(--line2); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: var(--muted); }
+  .history { margin-top: 18px; border-top: 1px dashed var(--line); padding-top: 12px; }
+  .history ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .history button { width: 100%; overflow: hidden; text-align: left; border: 0; background: transparent; padding: 6px 8px; border-radius: 6px; cursor: pointer; display: flex; gap: 8px; align-items: center; font-size: 13px; }
+  .history button:hover { background: var(--sunk); }
+  .history .sc { font: 700 12px var(--mono); min-width: 28px; }
+  .history .tx { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); }
+
+  .empty { color: var(--muted); text-align: center; padding: 60px 20px; }
+  .empty h2 { font: 700 24px var(--serif); color: var(--ink); margin: 0 0 8px; }
+  .how { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 28px auto 0; max-width: 720px; text-align: left; }
+  @media (max-width: 700px) { .how { grid-template-columns: 1fr; } }
+  .how div { border: 1px solid var(--line); border-radius: 10px; padding: 14px; background: var(--sunk); }
+  .how b { display: block; font-family: var(--serif); font-size: 16px; color: var(--ink); margin-bottom: 4px; }
+  .how span { font-size: 13px; }
+  .how em { font: 700 12px var(--mono); color: var(--stale); font-style: normal; }
+
+  .stepper { display: flex; align-items: center; margin-bottom: 14px; flex-wrap: wrap; row-gap: 8px; }
+  .step { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+  .step .dot { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line2); display: grid; place-items: center; font: 700 11px var(--mono); background: var(--card); }
+  .step.active { color: var(--ink); font-weight: 600; } .step.active .dot { border-color: var(--accent); color: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+  .step.done .dot { border-color: var(--fresh); background: var(--fresh); color: #fff; }
+  .step-line { flex: 1; height: 2px; background: var(--line); margin: 0 10px; min-width: 16px; }
+  .step-line.done { background: var(--fresh); }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 5px var(--accent-bg); } }
+  .progress { height: 4px; background: var(--line); border-radius: 3px; overflow: hidden; margin-bottom: 18px; }
+  .progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .35s ease; }
+
   .summary { display: flex; gap: 22px; align-items: center; flex-wrap: wrap; }
-  .ring { width: 116px; height: 116px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; }
-  .ring div { width: 92px; height: 92px; border-radius: 50%; background: var(--card); display: grid; place-items: center; text-align: center; }
-  .ring b { font: 700 32px/1 var(--serif); display: block; }
+  .ring { --v: 0; --c: var(--unv); width: 118px; height: 118px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; background: conic-gradient(var(--c) calc(var(--v) * 3.6deg), var(--line) 0); }
+  .ring > div { width: 94px; height: 94px; border-radius: 50%; background: var(--card); display: grid; place-items: center; text-align: center; }
+  .ring b { font: 700 34px/1 var(--serif); display: block; }
   .ring small { font-size: 11px; color: var(--muted); }
-  .grade { font: 700 26px var(--serif); margin: 0 0 6px; }
-  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
-  .chip { font: 12px var(--mono); padding: 3px 9px; border-radius: 99px; border: 1px solid var(--line); background: #fff; }
-  .banner { margin-top: 12px; font-size: 13px; padding: 8px 12px; border-radius: 8px; background: var(--part-bg); color: var(--part); }
-  h2 { font: 700 19px var(--serif); margin: 26px 0 10px; }
-  .answer { font: 17px/1.75 var(--serif); }
-  mark { padding: 1px 2px; border-radius: 3px; cursor: pointer; border-bottom: 2px solid; }
+  .grade { font: 700 26px var(--serif); margin: 0; }
+  .verdict-line { color: var(--muted); margin: 2px 0 10px; font-size: 14px; }
+  .filters { display: flex; gap: 6px; flex-wrap: wrap; }
+  .f-btn { border: 1px solid var(--line); background: var(--sunk); border-radius: 99px; padding: 4px 11px; font: 12px var(--mono); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+  .f-btn[aria-pressed=true] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .f-btn .sw { width: 8px; height: 8px; border-radius: 2px; }
+  .toolbar { display: flex; gap: 8px; margin-left: auto; align-self: flex-start; flex-wrap: wrap; }
+  .banner { margin-top: 14px; font-size: 13px; padding: 8px 12px; border-radius: 8px; background: var(--part-bg); color: var(--part); }
+
+  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: 22px 0 14px; overflow-x: auto; }
+  .tab { border: 0; background: transparent; padding: 8px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; color: var(--muted); font-weight: 600; font-size: 14px; white-space: nowrap; }
+  .tab[aria-selected=true] { color: var(--ink); border-bottom-color: var(--ink); }
+  .tab .n { font: 11px var(--mono); background: var(--stale-bg); color: var(--stale); padding: 1px 6px; border-radius: 99px; margin-left: 4px; }
+  .answer { font: 17px/1.8 var(--serif); }
+  mark { color: inherit; padding: 1px 2px; border-radius: 3px; cursor: pointer; border-bottom: 2px solid; }
+  mark:hover, mark:focus { filter: brightness(.95); }
   mark.current { background: var(--fresh-bg); border-color: var(--fresh); }
   mark.outdated { background: var(--stale-bg); border-color: var(--stale); }
   mark.partially_current { background: var(--part-bg); border-color: var(--part); }
   mark.unverified { background: var(--unv-bg); border-color: var(--unv); }
-  .claims { display: grid; gap: 12px; }
-  .claim { border: 1px solid var(--line); border-left: 5px solid var(--unv); border-radius: 8px; padding: 12px 14px; background: #fff; scroll-margin-top: 16px; }
-  .claim.current { border-left-color: var(--fresh); } .claim.outdated { border-left-color: var(--stale); }
-  .claim.partially_current { border-left-color: var(--part); } .claim.skipped { opacity: .65; }
+  mark.pending { background: transparent; border-color: var(--line2); border-bottom-style: dashed; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .legend span[style]::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; background: var(--c); }
+  #tip { position: fixed; z-index: 50; max-width: 320px; background: var(--ink); color: var(--paper); border-radius: 8px; padding: 8px 10px; font-size: 13px; line-height: 1.4; pointer-events: none; opacity: 0; transform: translateY(4px); transition: opacity .12s, transform .12s; box-shadow: var(--shadow); }
+  #tip.show { opacity: 1; transform: none; }
+  #tip b { font: 700 11px var(--mono); text-transform: uppercase; }
+
+  .claims { display: grid; gap: 12px; margin-top: 14px; }
+  .claims-h { display: flex; align-items: baseline; gap: 10px; margin-top: 26px; }
+  .claims-h h2 { font: 700 19px var(--serif); margin: 0; }
+  .claim { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px 12px 18px; background: var(--sunk); scroll-margin-top: 16px; animation: in .3s ease; position: relative; overflow: hidden; }
+  .claim::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--unv); }
+  .claim.current::before { background: var(--fresh); } .claim.outdated::before { background: var(--stale); }
+  .claim.partially_current::before { background: var(--part); } .claim.skipped { opacity: .7; } .claim.skipped::before { background: var(--line2); }
+  .claim.pending::before { background: var(--line2); }
   .claim.flash { box-shadow: 0 0 0 3px var(--accent); }
+  @keyframes in { from { opacity: 0; transform: translateY(6px); } }
   .ch { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .verdict { font: 700 11px var(--mono); text-transform: uppercase; padding: 3px 8px; border-radius: 4px; }
   .v-current { background: var(--fresh-bg); color: var(--fresh); } .v-outdated { background: var(--stale-bg); color: var(--stale); }
-  .v-partially_current { background: var(--part-bg); color: var(--part); } .v-unverified, .v-skipped { background: var(--unv-bg); color: var(--unv); }
+  .v-partially_current { background: var(--part-bg); color: var(--part); } .v-unverified, .v-skipped, .v-pending { background: var(--unv-bg); color: var(--unv); }
   .cat { font: 11px var(--mono); color: var(--muted); }
-  .score { margin-left: auto; font: 700 18px var(--serif); }
+  .score { margin-left: auto; font: 700 20px var(--serif); }
   .bar { height: 5px; background: var(--line); border-radius: 3px; margin: 8px 0; overflow: hidden; }
   .bar i { display: block; height: 100%; }
-  .ctext { margin: 6px 0; }
-  .now { font-weight: 600; color: var(--stale); }
+  .ctext { margin: 6px 0; font-size: 15px; }
+  .fix { display: flex; gap: 8px; align-items: center; background: var(--stale-bg); color: var(--stale); border-radius: 6px; padding: 6px 10px; margin: 6px 0; font-weight: 600; font-size: 14px; }
+  .fix .copy { margin-left: auto; font-size: 12px; border: 1px solid currentColor; background: transparent; color: inherit; border-radius: 5px; padding: 1px 7px; cursor: pointer; }
   .expl { color: var(--muted); font-size: 14px; }
+  .shimmer { height: 12px; border-radius: 4px; background: linear-gradient(90deg, var(--line) 0%, var(--sunk) 50%, var(--line) 100%); background-size: 200% 100%; animation: sh 1.2s linear infinite; margin: 6px 0; }
+  @keyframes sh { to { background-position: -200% 0; } }
   details { margin-top: 8px; font-size: 13px; }
-  summary { cursor: pointer; color: var(--accent); }
-  .ev { padding: 6px 0; border-top: 1px dashed var(--line); }
+  summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+  .ev { padding: 8px 0; border-top: 1px dashed var(--line); }
   .ev a { color: var(--ink); font-weight: 600; text-decoration: none; } .ev a:hover { text-decoration: underline; }
+  .dom { font: 11px var(--mono); color: var(--muted); }
   .st { font: 10px var(--mono); text-transform: uppercase; padding: 1px 5px; border-radius: 3px; margin-right: 6px; }
   .st-supports { background: var(--fresh-bg); color: var(--fresh); } .st-contradicts { background: var(--stale-bg); color: var(--stale); } .st-neutral { background: var(--unv-bg); color: var(--unv); }
-  .bd { font: 12px var(--mono); color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; }
-  .refreshed { white-space: pre-wrap; font: 16px/1.7 var(--serif); background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
+  .bd { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 10px; }
+  @media (max-width: 640px) { .bd { grid-template-columns: repeat(2, 1fr); } }
+  .bd div { font-size: 11px; color: var(--muted); }
+  .bd div i { display: block; height: 3px; background: var(--line); border-radius: 2px; margin-top: 3px; overflow: hidden; }
+  .bd div i::after { content: ""; display: block; height: 100%; width: var(--w); background: var(--muted); }
+  .no-match { color: var(--muted); font-style: italic; padding: 10px 0; }
+
+  .diff { font: 16px/1.8 var(--serif); white-space: pre-wrap; }
+  .diff del { background: var(--stale-bg); color: var(--stale); text-decoration: line-through; text-decoration-thickness: 1px; }
+  .diff ins { background: var(--fresh-bg); color: var(--fresh); text-decoration: none; border-bottom: 1px solid var(--fresh); }
+  .diff-tools { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; flex-wrap: wrap; }
+  .refreshed { white-space: pre-wrap; font: 16px/1.75 var(--serif); }
   table { width: 100%; border-collapse: collapse; font: 12px var(--mono); }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
   th { color: var(--muted); font-weight: 600; }
+  .tag-yes { color: var(--part); font-weight: 700; }
   .err { color: var(--stale); }
-  .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid #fff; border-right-color: transparent; border-radius: 50%; animation: s .7s linear infinite; vertical-align: -2px; margin-right: 6px; }
-  @keyframes s { to { transform: rotate(360deg); } }
+  .tstats { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+
+  dialog { border: 1px solid var(--line); border-radius: 14px; padding: 0; max-width: 640px; width: calc(100% - 32px); background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
+  dialog::backdrop { background: rgba(20,15,5,.45); }
+  .dlg { padding: 22px 24px; }
+  .dlg h2 { font: 700 22px var(--serif); margin: 0 0 8px; }
+  .dlg table { font: 13px/1.5 var(--sans); margin: 10px 0; }
+  .dlg th { white-space: nowrap; }
+  .dlg code { font: 12px var(--mono); background: var(--sunk); padding: 1px 5px; border-radius: 4px; }
+  .dlg .close { float: right; }
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--ink); color: var(--paper); padding: 8px 14px; border-radius: 8px; font-size: 13px; opacity: 0; transition: all .2s; z-index: 60; pointer-events: none; }
+  #toast.show { opacity: 1; transform: translateX(-50%); }
+  @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
 <header>
   <h1>Stale<span>Guard</span></h1>
   <p>Find the facts in an AI answer that have quietly gone out of date.</p>
-  <div id="mode">checking…</div>
+  <div class="hdr-right">
+    <span class="pill" id="mode" title="Server mode"><i></i><span>connecting…</span></span>
+    <button class="icon-btn" id="how-btn" type="button">How scoring works</button>
+    <button class="icon-btn" id="theme-btn" type="button" aria-label="Toggle dark mode">Dark mode</button>
+  </div>
 </header>
+
 <main>
-  <section class="panel">
-    <label for="q">Question (optional)</label>
-    <input id="q" placeholder="What was the user asking?" />
-    <label for="a">AI-generated answer to audit</label>
+  <section class="panel input-panel" aria-label="Answer to check">
+    <span class="lbl">Try a sample</span>
+    <div class="samples" id="samples"></div>
+    <label for="q">Question <span style="text-transform:none;letter-spacing:0;font-weight:400">(optional)</span></label>
+    <input type="text" id="q" placeholder="What was the user asking?" />
+    <label for="a">AI-generated answer</label>
     <textarea id="a" placeholder="Paste an LLM answer that mentions prices, versions, laws, people in roles…"></textarea>
+    <div class="meta"><span id="count">0 words</span><span id="risky"></span></div>
     <label for="kd">Answer's knowledge date</label>
-    <input id="kd" placeholder="e.g. 2024-06 (model training cutoff). Blank = default" />
-    <div class="row">
-      <button id="go">Check freshness</button>
-      <button class="ghost" id="demo">Load demo</button>
+    <div class="kd-row">
+      <input type="month" id="kd" />
+      <button class="chip-btn" type="button" id="kd-clear" title="Use the server default">default</button>
     </div>
-    <p class="hint">Claims are extracted and judged by LLMs routed through <b>Bifrost</b> (with provider fallbacks), and re-verified against live web sources with <b>Tavily</b>.</p>
+    <p class="hint">When the model's knowledge is from (its training cutoff). Older answers start with a higher risk of drift.</p>
+    <div class="actions">
+      <button class="primary" id="go" type="button">Check freshness</button>
+      <button class="ghost" id="clear" type="button" title="Clear the form">Clear</button>
+    </div>
+    <p class="hint"><kbd>Ctrl</kbd> + <kbd>Enter</kbd> to check · claims are judged by LLMs via <b>Bifrost</b> and re-verified live with <b>Tavily</b>.</p>
+    <div class="history" id="history" hidden>
+      <span class="lbl">Recent checks</span>
+      <ul id="history-list"></ul>
+    </div>
   </section>
-  <section class="panel" id="out"><div class="empty">Paste an answer and press <b>Check freshness</b>.</div></section>
+
+  <section class="panel" id="out" aria-live="polite">
+    <div class="empty">
+      <h2>Is this answer still true?</h2>
+      <p>Pick a sample or paste an answer, then press <b>Check freshness</b>.</p>
+      <div class="how">
+        <div><em>01</em><b>Extract</b><span>Splits the answer into atomic claims and flags the time-sensitive ones: prices, versions, laws, people in roles.</span></div>
+        <div><em>02</em><b>Re-verify</b><span>Searches the live web for each claim and checks it against fresh, dated sources.</span></div>
+        <div><em>03</em><b>Score &amp; fix</b><span>Gives each claim a 0–100 freshness score and rewrites the answer with corrections and citations.</span></div>
+      </div>
+    </div>
+  </section>
 </main>
+
+<div id="tip" role="tooltip"></div>
+<div id="toast" role="status"></div>
+
+<dialog id="how">
+  <div class="dlg">
+    <button class="icon-btn close" type="button" onclick="this.closest('dialog').close()">Close</button>
+    <h2>How the freshness score works</h2>
+    <p>Every claim gets four components. You can see them under each claim card.</p>
+    <table>
+      <tr><th>Prior drift</th><td>How likely the fact has changed <i>before</i> looking at evidence: <code>1 − 0.5^(age / half-life)</code>. Half-lives: pricing 120 days, versions 180, company info 240, statistics 365, regulation 540.</td></tr>
+      <tr><th>Recency</th><td>How fresh the newest relevant source is (1.0 = this month, 0.5 ≈ six months old).</td></tr>
+      <tr><th>Agreement</th><td>Share of decisive sources that agree with the verdict.</td></tr>
+      <tr><th>Confidence</th><td>How sure the judge is. Low confidence leans on the prior.</td></tr>
+    </table>
+    <p><b>Verdicts:</b> current (sources confirm) · outdated (newer sources show a different value) · partly current · unverified (nothing conclusive, scored from the prior) · timeless (e.g. who founded a company, not checked).</p>
+    <p><b>Answer score</b> = <code>0.6 × mean + 0.4 × lowest claim</code>. One wrong price makes an answer unsafe to act on, so a single stale claim pulls the whole score down. Grades: Fresh ≥ 85 · Mostly fresh ≥ 65 · Needs review ≥ 40 · Stale &lt; 40.</p>
+  </div>
+</dialog>
+
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const color = n => n >= 85 ? "var(--fresh)" : n >= 65 ? "#5f8f2f" : n >= 40 ? "var(--part)" : "var(--stale)";
-const label = v => ({current:"Current", outdated:"Outdated", partially_current:"Partly current", unverified:"Unverified", skipped:"Timeless"}[v] || v);
-let MODE = "";
+const LABEL = { current: "Current", outdated: "Outdated", partially_current: "Partly current", unverified: "Unverified", skipped: "Timeless", pending: "Checking…" };
+const ORDER = { outdated: 0, partially_current: 1, unverified: 2, current: 3, skipped: 4, pending: 5 };
+const store = { get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+                set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
+let S = null;           // current run state
+let SAMPLES = [];
 
+/* ---------- theme ---------- */
+const prefersDark = matchMedia("(prefers-color-scheme: dark)").matches;
+document.documentElement.dataset.theme = store.get("sg-theme", prefersDark ? "dark" : "light");
+$("#theme-btn").onclick = () => {
+  const t = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = t; store.set("sg-theme", t); themeLabel();
+};
+function themeLabel() { $("#theme-btn").textContent = document.documentElement.dataset.theme === "dark" ? "Light mode" : "Dark mode"; }
+themeLabel();
+$("#how-btn").onclick = () => $("#how").showModal();
+
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 1800); }
+async function copy(text, msg = "Copied") { try { await navigator.clipboard.writeText(text); toast(msg); } catch { toast("Copy failed"); } }
+
+/* ---------- health + samples ---------- */
 fetch("/api/health").then(r => r.json()).then(h => {
-  MODE = h.mode;
-  $("#mode").textContent = h.mode === "live"
-    ? `LIVE · Bifrost ${h.bifrost} · Tavily on`
-    : "OFFLINE · snapshot corpus (no API keys)";
-}).catch(() => $("#mode").textContent = "server unreachable");
+  const m = $("#mode");
+  m.classList.add(h.mode === "live" ? "live" : "off");
+  m.querySelector("span").textContent = h.mode === "live" ? `LIVE · Bifrost ${h.bifrost} · Tavily` : "OFFLINE · snapshot (no API keys)";
+  m.title = h.mode === "live" ? `Extract: ${h.extract_model}\nJudge: ${h.judge_model}\nFallbacks: ${h.fallbacks.join(", ")}` : "Evidence comes from a bundled snapshot. Set TAVILY_API_KEY and run Bifrost for live checks.";
+}).catch(() => $("#mode span").textContent = "server unreachable");
 
-$("#demo").onclick = async () => {
-  const d = await (await fetch("/api/demo")).json();
-  $("#q").value = d.question; $("#a").value = d.answer; $("#kd").value = "2024-06";
-};
+fetch("/api/samples").then(r => r.json()).then(list => {
+  SAMPLES = list;
+  $("#samples").innerHTML = list.map(s => `<button class="chip-btn" type="button" data-id="${esc(s.id)}" aria-pressed="false">${esc(s.label)}</button>`).join("");
+  $("#samples").querySelectorAll("button").forEach(b => b.onclick = () => loadSample(b.dataset.id, true));
+}).catch(() => {});
 
-$("#go").onclick = async () => {
+function loadSample(id, run) {
+  const s = SAMPLES.find(x => x.id === id); if (!s) return;
+  $("#q").value = s.question || ""; $("#a").value = s.answer; $("#kd").value = s.knowledge_date || "";
+  updateCount();
+  document.querySelectorAll("#samples button").forEach(b => b.setAttribute("aria-pressed", b.dataset.id === id));
+  if (run) check();
+}
+
+/* ---------- input helpers ---------- */
+const RISKY = /([$€£₹]\s?\d|\bv?\d+\.\d+\b|\b(latest|current(ly)?|still|now|ceo|act|law|regulation|price|costs?|lts|version)\b)/gi;
+function updateCount() {
+  const t = $("#a").value.trim(), words = t ? t.split(/\s+/).length : 0, hits = (t.match(RISKY) || []).length;
+  $("#count").textContent = `${words} word${words === 1 ? "" : "s"}`;
+  $("#risky").textContent = hits ? `${hits} time-sensitive signal${hits === 1 ? "" : "s"}` : "";
+  document.querySelectorAll("#samples button").forEach(b => { const s = SAMPLES.find(x => x.id === b.dataset.id); if (s && s.answer !== $("#a").value) b.setAttribute("aria-pressed", "false"); });
+}
+$("#a").addEventListener("input", updateCount);
+$("#kd-clear").onclick = () => { $("#kd").value = ""; };
+$("#clear").onclick = () => { $("#q").value = ""; $("#a").value = ""; $("#kd").value = ""; updateCount(); $("#a").focus(); };
+$("#go").onclick = () => check();
+document.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); check(); } });
+
+/* ---------- history ---------- */
+function renderHistory() {
+  const h = store.get("sg-history", []);
+  $("#history").hidden = !h.length;
+  $("#history-list").innerHTML = h.map((x, i) => `<li><button type="button" data-i="${i}" title="${esc(x.answer.slice(0, 200))}"><span class="sc" style="color:${color(x.score)}">${x.score}</span><span class="tx">${esc(x.answer)}</span></button></li>`).join("");
+  $("#history-list").querySelectorAll("button").forEach(b => b.onclick = () => {
+    const x = h[+b.dataset.i]; $("#q").value = x.question || ""; $("#a").value = x.answer; $("#kd").value = x.kd || ""; updateCount();
+    if (x.report) { S = freshState(x.report.answer); onEvent({ type: "report", report: x.report }); }
+  });
+}
+function saveHistory(rep, kd) {
+  const h = store.get("sg-history", []).filter(x => x.answer !== rep.answer);
+  h.unshift({ answer: rep.answer, question: rep.question, kd, score: rep.overall_freshness, report: rep });
+  store.set("sg-history", h.slice(0, 6)); renderHistory();
+}
+renderHistory();
+
+/* ---------- run ---------- */
+function freshState(answer) { return { answer, stage: "extract", claims: [], results: {}, toVerify: 0, report: null, filter: "all", tab: "annotated", error: null, diffMode: "diff" }; }
+
+async function check() {
   const answer = $("#a").value.trim();
-  if (!answer) { $("#a").focus(); return; }
-  const btn = $("#go"); btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Checking…';
-  $("#out").innerHTML = '<div class="empty">Extracting claims and re-verifying them against the live web…</div>';
+  if (!answer) { $("#a").focus(); toast("Paste an answer first"); return; }
+  if (S && S.running) return;
+  const kd = $("#kd").value || null;
+  const body = JSON.stringify({ answer, question: $("#q").value, knowledge_date: kd });
+  S = freshState(answer); S.running = true;
+  const btn = $("#go"); btn.disabled = true; btn.textContent = "Checking…";
+  render();
+  if (innerWidth < 960) $("#out").scrollIntoView({ behavior: "smooth" });
   try {
-    const r = await fetch("/api/check", { method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({ answer, question: $("#q").value, knowledge_date: $("#kd").value || null }) });
-    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
-    render(await r.json());
+    const r = await fetch("/api/check/stream", { method: "POST", headers: { "Content-Type": "application/json" }, body });
+    if (!r.ok || !r.body) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+    const reader = r.body.getReader(), dec = new TextDecoder(); let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf("\n\n")) >= 0) {
+        const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+        const data = chunk.split("\n").filter(l => l.startsWith("data:")).map(l => l.slice(5)).join("\n");
+        if (data) onEvent(JSON.parse(data));
+      }
+    }
+    if (!S.report && !S.error) throw new Error("stream ended early");
   } catch (e) {
-    $("#out").innerHTML = `<div class="empty err">Check failed: ${esc(e.message)}</div>`;
-  } finally { btn.disabled = false; btn.textContent = "Check freshness"; }
-};
+    // fall back to the non-streaming endpoint (e.g. behind a buffering proxy)
+    if (!S.report && !S.error) {
+      try {
+        const r = await fetch("/api/check", { method: "POST", headers: { "Content-Type": "application/json" }, body });
+        if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+        onEvent({ type: "report", report: await r.json() });
+      } catch (e2) { S.error = e2.message; }
+    }
+  } finally {
+    S.running = false; btn.disabled = false; btn.textContent = "Check freshness"; render();
+    if (S.report) saveHistory(S.report, kd);
+  }
+}
 
-function highlight(answer, claims) {
-  // place each claim's span once, longest first, avoiding overlaps
-  const marks = [];
-  for (const c of [...claims].sort((a, b) => (b.claim.span || "").length - (a.claim.span || "").length)) {
-    if (c.verdict === "skipped") continue;
-    const span = (c.claim.span || c.claim.text).trim();
-    let i = answer.indexOf(span);
-    if (i < 0) i = answer.indexOf(span.replace(/[.\s]+$/, ""));
+function onEvent(ev) {
+  if (ev.type === "stage") S.stage = ev.stage;
+  else if (ev.type === "claims") { S.claims = ev.claims; S.toVerify = ev.to_verify; }
+  else if (ev.type === "claim") S.results[ev.result.claim.id] = ev.result;
+  else if (ev.type === "report") { S.report = ev.report; S.stage = "done"; S.claims = ev.report.claims.map(r => r.claim); ev.report.claims.forEach(r => { S.results[r.claim.id] = r; }); }
+  else if (ev.type === "error") S.error = ev.message;
+  render();
+}
+
+/* ---------- rendering ---------- */
+function items() { return S.claims.map(c => S.results[c.id] || { claim: c, verdict: "pending", freshness: 0, evidence: [] }); }
+
+function stepper() {
+  const steps = [["extract", "Extract claims"], ["verify", "Re-verify live"], ["rewrite", "Score & fix"]];
+  const idx = { extract: 0, verify: 1, rewrite: 2, done: 3 }[S.stage] ?? 0;
+  const verified = Object.values(S.results).filter(r => r.verdict !== "skipped").length;
+  return `<div class="stepper">${steps.map(([k, l], i) => {
+    const cls = i < idx ? "done" : i === idx ? "active" : "";
+    let txt = l; if (k === "verify" && S.toVerify && idx >= 1) txt += ` ${Math.min(verified, S.toVerify)}/${S.toVerify}`;
+    return `${i ? `<div class="step-line ${i <= idx ? "done" : ""}"></div>` : ""}<div class="step ${cls}"><span class="dot">${i < idx ? "✓" : i + 1}</span>${txt}</div>`;
+  }).join("")}</div>`;
+}
+
+function progressPct() {
+  if (S.stage === "done") return 100;
+  const total = S.claims.length || 1, done = Object.keys(S.results).length;
+  return S.stage === "extract" ? 8 : S.stage === "verify" ? 15 + 75 * done / total : 92;
+}
+
+function summary() {
+  const rep = S.report;
+  if (!rep) {
+    const n = S.claims.length;
+    return `<div class="summary"><div class="ring"><div><span><b>…</b><small>scoring</small></span></div></div>
+      <div><p class="grade">${S.stage === "extract" ? "Reading the answer…" : `Checking ${n} claim${n === 1 ? "" : "s"}…`}</p>
+      <p class="verdict-line">${S.stage === "extract" ? "Finding facts that can go out of date." : "Searching the web and judging each claim as results come in."}</p></div></div>`;
+  }
+  const s = rep.stats, n = rep.overall_freshness, bad = s.outdated + s.partially_current, checked = s.claims - s.skipped;
+  const line = bad ? `${bad} of ${checked} checked claim${checked === 1 ? "" : "s"} ${bad === 1 ? "is" : "are"} out of date.` : s.current ? "Every checked claim is backed by current sources." : "Nothing could be confirmed either way.";
+  const f = (k, label, c) => `<button class="f-btn" type="button" data-f="${k}" aria-pressed="${S.filter === k}"><span class="sw" style="background:${c}"></span>${label} ${k === "all" ? s.claims : s[k]}</button>`;
+  return `<div class="summary">
+    <div class="ring" style="--c:${color(n)};--v:${n}"><div><span><b>${n}</b><small>/100 fresh</small></span></div></div>
+    <div style="flex:1;min-width:240px"><p class="grade" style="color:${color(n)}">${esc(rep.grade)}</p>
+      <p class="verdict-line">${line}</p>
+      <div class="filters" role="group" aria-label="Filter claims">${f("all", "All", "var(--ink)")}${f("outdated", "Outdated", "var(--stale)")}${f("partially_current", "Partial", "var(--part)")}${f("unverified", "Unverified", "var(--unv)")}${f("current", "Current", "var(--fresh)")}${f("skipped", "Timeless", "var(--line2)")}</div>
+    </div>
+    <div class="toolbar"><button class="icon-btn" type="button" id="copy-md">Copy report</button><button class="icon-btn" type="button" id="dl-json">Download JSON</button></div>
+  </div>
+  ${rep.mode !== "live" ? `<div class="banner">Offline mode: evidence comes from a bundled snapshot, not a live search. Free-form answers will mostly come back “unverified” — try the samples, or add a TAVILY_API_KEY and run Bifrost for real-time checks.</div>` : ""}`;
+}
+
+function highlight() {
+  const answer = S.answer, marks = [];
+  for (const r of [...items()].sort((a, b) => (b.claim.span || "").length - (a.claim.span || "").length)) {
+    if (r.verdict === "skipped") continue;
+    const span = (r.claim.span || r.claim.text).trim();
+    let i = answer.indexOf(span), len = span.length;
+    if (i < 0) { const t = span.replace(/[.\s]+$/, ""); i = answer.indexOf(t); len = t.length; }
     if (i < 0) continue;
-    const end = i + span.length;
-    if (marks.some(m => i < m.end && end > m.start)) continue;
-    marks.push({ start: i, end, c });
+    if (marks.some(m => i < m.end && i + len > m.start)) continue;
+    marks.push({ start: i, end: i + len, r });
   }
   marks.sort((a, b) => a.start - b.start);
   let out = "", pos = 0;
   for (const m of marks) {
     out += esc(answer.slice(pos, m.start));
-    out += `<mark class="${m.c.verdict}" data-id="${m.c.claim.id}" title="${label(m.c.verdict)} · ${m.c.freshness}/100">${esc(answer.slice(m.start, m.end))}</mark>`;
+    out += `<mark class="${m.r.verdict}" tabindex="0" data-id="${m.r.claim.id}">${esc(answer.slice(m.start, m.end))}</mark>`;
     pos = m.end;
   }
   return out + esc(answer.slice(pos));
 }
 
-function render(rep) {
-  const s = rep.stats, n = rep.overall_freshness;
-  const order = { outdated: 0, partially_current: 1, unverified: 2, current: 3, skipped: 4 };
-  const claims = [...rep.claims].sort((a, b) => order[a.verdict] - order[b.verdict] || a.freshness - b.freshness);
-  let h = `<div class="summary">
-    <div class="ring" style="background:conic-gradient(${color(n)} ${n * 3.6}deg, var(--line) 0)"><div><span><b>${n}</b><small>/100 fresh</small></span></div></div>
-    <div><p class="grade" style="color:${color(n)}">${esc(rep.grade)}</p>
-      <div class="chips">
-        <span class="chip">❌ ${s.outdated} outdated</span><span class="chip">🟡 ${s.partially_current} partial</span>
-        <span class="chip">✅ ${s.current} current</span><span class="chip">❔ ${s.unverified} unverified</span>
-        <span class="chip">${s.searches} Tavily searches</span><span class="chip">${s.llm_calls} LLM calls via Bifrost</span>
-        <span class="chip">${(s.elapsed_ms / 1000).toFixed(1)} s</span>
-      </div></div></div>`;
-  if (rep.mode !== "live") h += `<div class="banner">Offline mode: evidence comes from a bundled snapshot corpus, not a live search. Add a TAVILY_API_KEY and run Bifrost for real-time verification.</div>`;
-  h += `<h2>The answer, annotated</h2><div class="answer">${highlight(rep.answer, rep.claims)}</div>`;
-  h += `<h2>Claims</h2><div class="claims">`;
-  for (const c of claims) {
-    const b = c.breakdown;
-    h += `<div class="claim ${c.verdict}" id="claim-${c.claim.id}">
-      <div class="ch"><span class="verdict v-${c.verdict}">${label(c.verdict)}</span><span class="cat">${esc(c.claim.category)}${c.claim.subject ? " · " + esc(c.claim.subject) : ""}</span><span class="score" style="color:${color(c.freshness)}">${c.freshness}</span></div>
-      <div class="bar"><i style="width:${c.freshness}%;background:${color(c.freshness)}"></i></div>
-      <div class="ctext">${esc(c.claim.text)}</div>
-      ${c.current_value ? `<div class="now">Now: ${esc(c.current_value)}</div>` : ""}
-      ${c.explanation ? `<div class="expl">${esc(c.explanation)}</div>` : ""}
-      ${c.evidence.length ? `<details ${c.verdict === "outdated" ? "open" : ""}><summary>${c.evidence.length} source(s)</summary>${c.evidence.map((e, i) =>
-        `<div class="ev"><span class="st st-${e.stance}">${e.stance}</span>[${i + 1}] <a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.title || e.url)}</a> <span class="cat">${esc(e.published_date || "undated")}</span><div class="expl">${esc(e.snippet.slice(0, 260))}${e.snippet.length > 260 ? "…" : ""}</div></div>`).join("")}</details>` : ""}
-      ${c.verdict !== "skipped" ? `<div class="bd"><span>prior drift ${b.prior_risk}</span><span>recency ${b.evidence_recency}</span><span>agreement ${b.source_agreement}</span><span>confidence ${b.confidence}</span></div>` : ""}
-    </div>`;
+function domain(u) { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } }
+
+function card(r) {
+  const c = r.claim, v = r.verdict;
+  if (v === "pending") return `<div class="claim pending" id="claim-${c.id}"><div class="ch"><span class="verdict v-pending">${LABEL.pending}</span><span class="cat">${esc(c.category)}${c.subject ? " · " + esc(c.subject) : ""}</span></div><div class="ctext">${esc(c.text)}</div><div class="shimmer" style="width:70%"></div><div class="shimmer" style="width:45%"></div></div>`;
+  const b = r.breakdown || {};
+  const meter = (label, val, title) => `<div title="${title}">${label} ${val}<i style="--w:${Math.round(val * 100)}%"></i></div>`;
+  const fixable = (v === "outdated" || v === "partially_current") && r.current_value;
+  return `<div class="claim ${v}" id="claim-${c.id}">
+    <div class="ch"><span class="verdict v-${v}">${LABEL[v]}</span><span class="cat">${esc(c.category)}${c.subject ? " · " + esc(c.subject) : ""}</span><span class="score" style="color:${color(r.freshness)}" title="Freshness score">${r.freshness}</span></div>
+    <div class="bar"><i style="width:${r.freshness}%;background:${color(r.freshness)}"></i></div>
+    <div class="ctext">${esc(c.text)}</div>
+    ${fixable ? `<div class="fix">→ Now: ${esc(r.current_value)}<button class="copy" type="button" data-copy="${esc(r.current_value)}">copy</button></div>` : ""}
+    ${r.explanation ? `<div class="expl">${esc(r.explanation)}</div>` : ""}
+    ${r.evidence && r.evidence.length ? `<details ${v === "outdated" ? "open" : ""}><summary>${r.evidence.length} source${r.evidence.length === 1 ? "" : "s"}</summary>${r.evidence.map((e, i) =>
+      `<div class="ev"><span class="st st-${e.stance}">${e.stance}</span>[${i + 1}] <a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.title || e.url)}</a> <span class="dom">${esc(domain(e.url))} · ${esc(e.published_date || "undated")}</span><div class="expl">${esc((e.snippet || "").slice(0, 280))}${(e.snippet || "").length > 280 ? "…" : ""}</div></div>`).join("")}</details>` : ""}
+    ${v !== "skipped" ? `<div class="bd">${meter("Prior drift", b.prior_risk, "How likely this kind of fact has changed, given its age")}${meter("Recency", b.evidence_recency, "How fresh the newest relevant source is")}${meter("Agreement", b.source_agreement, "Share of decisive sources agreeing with the verdict")}${meter("Confidence", b.confidence, "Judge confidence")}</div>` : ""}
+  </div>`;
+}
+
+/* diff between the original and corrected answers: sentence-level alignment, then a
+   word-level diff inside sentences that were only lightly edited */
+function lcsOps(A, B) {
+  const n = A.length, m = B.length;
+  if (n * m > 400000) return [...A.map(x => ["-", x]), ...B.map(x => ["+", x])];
+  const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i][j] = A[i] === B[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const ops = []; let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (A[i] === B[j]) { ops.push(["=", A[i]]); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) ops.push(["-", A[i++]]);
+    else ops.push(["+", B[j++]]);
   }
-  h += `</div>`;
-  if (rep.refreshed_answer && rep.refreshed_answer !== rep.answer)
-    h += `<h2>Refreshed answer <button class="ghost" style="padding:4px 10px;font-size:12px" onclick="navigator.clipboard.writeText(document.querySelector('.refreshed').innerText)">Copy</button></h2><div class="refreshed">${esc(rep.refreshed_answer)}</div>`;
-  h += `<h2>Call trace</h2><table><tr><th>kind</th><th>purpose</th><th>target</th><th>served by</th><th>fallback</th><th>ms</th><th>tokens</th></tr>${rep.trace.map(t =>
-    `<tr><td>${t.kind}</td><td>${esc(t.purpose)}</td><td>${esc(t.target.slice(0, 70))}</td><td>${esc(t.served_by)}${t.cached ? " (cache)" : ""}</td><td>${t.fallback_used ? "yes" : ""}</td><td>${t.latency_ms}</td><td>${t.tokens || ""}</td></tr>${t.error ? `<tr><td></td><td colspan="6" class="err">${esc(t.error)}</td></tr>` : ""}`).join("")}</table>`;
-  $("#out").innerHTML = h;
-  document.querySelectorAll("mark[data-id]").forEach(m => m.onclick = () => {
-    const el = document.getElementById("claim-" + m.dataset.id);
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1200);
+  while (i < n) ops.push(["-", A[i++]]);
+  while (j < m) ops.push(["+", B[j++]]);
+  return ops;
+}
+const sentences = t => t.match(/[^\n]+?(?:[.!?](?=\s|$)|(?=\n)|$)[^\S\n]*|\n+/g) || [t];
+const words = t => t.split(/(\s+|[,;:!?()\[\]]|\.(?=\s|$))/).filter(Boolean);
+function wordDiff(a, b) {
+  const ops = lcsOps(words(a), words(b));
+  const same = ops.filter(o => o[0] === "=" && o[1].trim()).length, total = Math.max(words(a).filter(w => w.trim()).length, 1);
+  if (same / total < 0.5) return `<del>${esc(a.trimEnd())}</del> <ins>${esc(b)}</ins>`;
+  return ops.map(([k, w]) => k === "=" ? esc(w) : k === "-" ? `<del>${esc(w)}</del>` : `<ins>${esc(w)}</ins>`).join("")
+    .replace(/<\/del><del>/g, "").replace(/<\/ins><ins>/g, "");
+}
+function answerDiff(a, b) {
+  const ops = lcsOps(sentences(a), sentences(b)); let out = "", dels = [], ins = [];
+  const flush = () => {
+    const k = Math.min(dels.length, ins.length);
+    for (let i = 0; i < k; i++) out += wordDiff(dels[i], ins[i]);
+    for (const d of dels.slice(k)) out += `<del>${esc(d)}</del>`;
+    for (const x of ins.slice(k)) out += `<ins>${esc(x)}</ins>`;
+    dels = []; ins = [];
+  };
+  for (const [k, sTxt] of ops) { if (k === "=") { flush(); out += esc(sTxt); } else (k === "-" ? dels : ins).push(sTxt); }
+  flush(); return out;
+}
+
+function tabBody() {
+  const rep = S.report;
+  if (S.tab === "refreshed") {
+    if (!rep) return `<p class="no-match">The corrected answer appears once every claim is checked.</p>`;
+    if (!rep.refreshed_answer || rep.refreshed_answer === rep.answer) return `<p class="no-match">Nothing to correct — no claim was found to be out of date.</p>`;
+    return `<div class="diff-tools"><button class="f-btn" type="button" data-dm="diff" aria-pressed="${S.diffMode === "diff"}">Show changes</button><button class="f-btn" type="button" data-dm="clean" aria-pressed="${S.diffMode === "clean"}">Clean copy</button><button class="icon-btn" type="button" id="copy-refreshed" style="margin-left:auto">Copy corrected answer</button></div>
+      ${S.diffMode === "diff" ? `<div class="diff">${answerDiff(rep.answer, rep.refreshed_answer)}</div>` : `<div class="refreshed">${esc(rep.refreshed_answer)}</div>`}`;
+  }
+  if (S.tab === "trace") {
+    if (!rep) return `<p class="no-match">The call trace appears when the check finishes.</p>`;
+    const s = rep.stats;
+    return `<div class="tstats"><span class="pill">${s.searches} searches</span><span class="pill">${s.llm_calls} LLM calls via Bifrost</span><span class="pill">${s.fallbacks_used} fallbacks</span><span class="pill">${s.tokens} tokens</span><span class="pill">${(s.elapsed_ms / 1000).toFixed(1)} s</span><span class="pill">knowledge date ${esc(s.knowledge_date)}</span></div>
+    <div style="overflow-x:auto"><table><tr><th>kind</th><th>purpose</th><th>target</th><th>served by</th><th>fallback</th><th>ms</th><th>tokens</th></tr>${rep.trace.map(t =>
+      `<tr><td>${t.kind}</td><td>${esc(t.purpose)}</td><td>${esc(t.target.slice(0, 80))}</td><td>${esc(t.served_by)}${t.cached ? " (cache)" : ""}</td><td>${t.fallback_used ? '<span class="tag-yes">yes</span>' : ""}</td><td>${t.latency_ms}</td><td>${t.tokens || ""}</td></tr>${t.error ? `<tr><td></td><td colspan="6" class="err">${esc(t.error)}</td></tr>` : ""}`).join("")}</table></div>`;
+  }
+  return `<div class="answer">${highlight()}</div>
+    <div class="legend"><span style="--c:var(--stale)">Outdated</span><span style="--c:var(--part)">Partly current</span><span style="--c:var(--unv)">Unverified</span><span style="--c:var(--fresh)">Current</span><span>Hover or tap a highlight for details</span></div>`;
+}
+
+function render() {
+  const out = $("#out");
+  if (!S) return;
+  hideTip();
+  if (S.error && !S.report) { out.innerHTML = `<div class="empty"><h2 class="err">Check failed</h2><p>${esc(S.error)}</p><button class="ghost" type="button" id="retry">Try again</button></div>`; $("#retry").onclick = () => check(); return; }
+  const all = items();
+  const list = all.filter(r => S.filter === "all" || r.verdict === S.filter).sort((a, b) => (ORDER[a.verdict] - ORDER[b.verdict]) || (a.freshness - b.freshness));
+  const nBad = all.filter(r => r.verdict === "outdated" || r.verdict === "partially_current").length;
+  const tab = (k, l, n) => `<button class="tab" role="tab" type="button" data-tab="${k}" aria-selected="${S.tab === k}">${l}${n ? `<span class="n">${n}</span>` : ""}</button>`;
+  out.innerHTML = `${S.stage !== "done" ? stepper() + `<div class="progress"><i style="width:${progressPct()}%"></i></div>` : ""}
+    ${summary()}
+    <div class="tabs" role="tablist">${tab("annotated", "Annotated answer")}${tab("refreshed", "Corrected answer", S.report && nBad ? nBad : "")}${tab("trace", "Call trace")}</div>
+    <div role="tabpanel">${tabBody()}</div>
+    <div class="claims-h"><h2>Claims</h2><span class="cat">${S.filter === "all" ? "most urgent first" : "filtered: " + LABEL[S.filter]}</span></div>
+    <div class="claims">${list.length ? list.map(card).join("") : S.claims.length ? `<p class="no-match">No claims match this filter.</p>` : `<div class="claim pending"><div class="shimmer" style="width:60%"></div><div class="shimmer" style="width:85%"></div><div class="shimmer" style="width:40%"></div></div>`}</div>`;
+  wire();
+}
+
+function wire() {
+  const out = $("#out");
+  out.querySelectorAll("[data-f]").forEach(b => b.onclick = () => { S.filter = b.dataset.f; render(); });
+  out.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { S.tab = b.dataset.tab; render(); });
+  out.querySelectorAll("[data-dm]").forEach(b => b.onclick = () => { S.diffMode = b.dataset.dm; render(); });
+  out.querySelectorAll("[data-copy]").forEach(b => b.onclick = () => copy(b.dataset.copy));
+  const cr = $("#copy-refreshed"); if (cr) cr.onclick = () => copy(S.report.refreshed_answer, "Corrected answer copied");
+  const md = $("#copy-md"); if (md) md.onclick = () => copy(toMarkdown(S.report), "Report copied as Markdown");
+  const js = $("#dl-json"); if (js) js.onclick = () => {
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(S.report, null, 2)], { type: "application/json" }));
+    a.download = "staleguard-report.json"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  out.querySelectorAll("mark[data-id]").forEach(m => {
+    const go = () => {
+      if (S.filter !== "all" && S.results[m.dataset.id]?.verdict !== S.filter) { S.filter = "all"; render(); }
+      const el = document.getElementById("claim-" + m.dataset.id); if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" }); el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1300);
+    };
+    m.onclick = go; m.onkeydown = e => { if (e.key === "Enter") go(); };
+    m.onmouseenter = m.onfocus = () => showTip(m); m.onmouseleave = m.onblur = hideTip;
   });
 }
+
+function showTip(m) {
+  const r = S.results[m.dataset.id], tip = $("#tip");
+  tip.innerHTML = !r ? `<b>Checking…</b>` : `<b>${LABEL[r.verdict]} · ${r.freshness}/100</b>${r.current_value ? `<div>Now: ${esc(r.current_value)}</div>` : ""}${r.explanation ? `<div style="opacity:.8;margin-top:2px">${esc(r.explanation.slice(0, 160))}</div>` : ""}`;
+  const rc = m.getBoundingClientRect();
+  tip.style.left = Math.max(8, Math.min(innerWidth - 330, rc.left)) + "px";
+  tip.style.top = (rc.bottom + 8 + 120 > innerHeight ? rc.top - tip.offsetHeight - 8 : rc.bottom + 8) + "px";
+  tip.classList.add("show");
+}
+function hideTip() { $("#tip").classList.remove("show"); }
+addEventListener("scroll", hideTip, { passive: true });
+
+function toMarkdown(rep) {
+  const L = [`# StaleGuard report — ${rep.overall_freshness}/100 (${rep.grade})`, "", `Checked ${rep.checked_at} · mode: ${rep.mode}`, ""];
+  if (rep.question) L.push(`**Question:** ${rep.question}`, "");
+  L.push("| Verdict | Score | Claim | Now |", "|---|---|---|---|");
+  for (const r of [...rep.claims].sort((a, b) => ORDER[a.verdict] - ORDER[b.verdict]))
+    L.push(`| ${LABEL[r.verdict]} | ${r.freshness} | ${r.claim.text.replace(/\|/g, "\\|")} | ${(r.current_value || "").replace(/\|/g, "\\|")} |`);
+  if (rep.refreshed_answer && rep.refreshed_answer !== rep.answer) L.push("", "## Corrected answer", "", rep.refreshed_answer);
+  return L.join("\n");
+}
+
+updateCount();
 </script>
 </body>
 </html>

@@ -12,7 +12,7 @@ import asyncio
 import json
 import time
 from datetime import date, datetime, timezone
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 from . import heuristics, prompts, scoring
 from .config import Settings, settings as default_settings
@@ -151,31 +151,30 @@ class StaleGuard:
                     return text + ("\n\nSources:\n" + "\n".join(f"[{i + 1}] {u}" for i, u in enumerate(sources)))
             except LLMError:
                 pass
-        # deterministic rewrite: annotate stale spans in place
+        # deterministic rewrite: correct stale spans in place, with a citation
         text = req.answer
         for r in bad:
-            span = r.claim.span or r.claim.text
+            span = (r.claim.span or r.claim.text).strip()
+            if span not in text:
+                continue
             ref = cite(r).strip(" []")
-            label = "outdated" if r.verdict == Verdict.OUTDATED else "partly outdated"
-            if r.current_value and len(r.current_value) < 40:
-                tag = f" [⚠ {label}: now {r.current_value}" + (f", see [{ref}]]" if ref else "]")
+            tail = f" [{ref}]" if ref else ""
+            end = "." if span.endswith(".") else ""
+            body = span[:-1] if end else span
+            cur, old = r.current_value.strip(), r.claim.value.strip()
+            if cur and old and len(cur) <= 40 and old in body:
+                fixed = body.replace(old, cur, 1) + tail + end            # "Python 3.11" -> "Python 3.14 [1]"
+            elif cur and len(cur) > 40:
+                fixed = cur.rstrip(".") + tail + "."                       # stale statement -> source's statement
             else:
-                tag = f" [⚠ {label}" + (f", see [{ref}]]" if ref else "]")
-            if span in text:
-                text = text.replace(span, span.rstrip(".") + tag + ("." if span.endswith(".") else ""), 1)
+                fixed = body + f" (outdated{': now ' + cur if cur else ''}{tail})" + end
+            text = text.replace(span, fixed, 1)
         if sources:
             text += "\n\nSources:\n" + "\n".join(f"[{i + 1}] {u}" for i, u in enumerate(sources))
         return text
 
     # ---------------------------------------------------------------- run --
-    async def check(self, req: CheckRequest) -> CheckReport:
-        t0 = time.perf_counter()
-        trace: list[CallTrace] = []
-        kd = req.knowledge_date or self.s.default_knowledge_date
-        claims = await self.extract(req, trace)
-        sem = asyncio.Semaphore(self.s.concurrency)
-        results = list(await asyncio.gather(*(self.verify(c, kd, trace, sem) for c in claims)))
-        refreshed = await self.rewrite(req, results, trace) if req.rewrite else ""
+    def _report(self, req, results, refreshed, trace, kd, t0) -> CheckReport:
         score = scoring.overall(results)
         counts = {v.value: sum(r.verdict == v for r in results) for v in Verdict}
         return CheckReport(
@@ -193,6 +192,42 @@ class StaleGuard:
                 "elapsed_ms": int((time.perf_counter() - t0) * 1000),
             },
         )
+
+    async def check_stream(self, req: CheckRequest) -> AsyncIterator[dict]:
+        """Run the pipeline and yield progress events as they happen.
+
+        Events: stage(name, ...) -> claims(list) -> claim(result) x N (as each
+        finishes) -> stage(rewrite) -> report(full CheckReport).
+        """
+        t0 = time.perf_counter()
+        trace: list[CallTrace] = []
+        kd = req.knowledge_date or self.s.default_knowledge_date
+        yield {"type": "stage", "stage": "extract", "mode": self.mode}
+        claims = await self.extract(req, trace)
+        yield {"type": "claims", "claims": [c.model_dump(mode="json") for c in claims],
+               "to_verify": sum(c.time_sensitive and c.category != Category.STABLE for c in claims)}
+        yield {"type": "stage", "stage": "verify"}
+        sem = asyncio.Semaphore(self.s.concurrency)
+        tasks = [asyncio.create_task(self.verify(c, kd, trace, sem)) for c in claims]
+        done: dict[str, ClaimResult] = {}
+        for fut in asyncio.as_completed(tasks):
+            r = await fut
+            done[r.claim.id] = r
+            yield {"type": "claim", "result": r.model_dump(mode="json"), "done": len(done), "total": len(claims)}
+        results = [done[c.id] for c in claims]
+        refreshed = ""
+        if req.rewrite:
+            yield {"type": "stage", "stage": "rewrite"}
+            refreshed = await self.rewrite(req, results, trace)
+        report = self._report(req, results, refreshed, trace, kd, t0)
+        yield {"type": "report", "report": report.model_dump(mode="json")}
+
+    async def check(self, req: CheckRequest) -> CheckReport:
+        report = None
+        async for ev in self.check_stream(req):
+            if ev["type"] == "report":
+                report = CheckReport.model_validate(ev["report"])
+        return report
 
     async def aclose(self):
         for c in (self.llm, self.search):

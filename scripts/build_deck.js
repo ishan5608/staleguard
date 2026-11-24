@@ -84,7 +84,7 @@ tb(s, "Answer score = 0.6 · mean + 0.4 · min — one wrong price makes the who
 
 // 7 impact + engineering
 s = pres.addSlide({ masterName: "CONTENT" }); s.addText("Built to drop into real AI products", { placeholder: "title" });
-const stats = [["1 line", "base_url change to guard any OpenAI-SDK app"], ["19", "tests incl. HTTP-level Bifrost & Tavily mocks"], ["0 keys", "needed to try it — offline snapshot mode"]];
+const stats = [["1 line", "base_url change to guard any OpenAI-SDK app"], ["24", "tests incl. HTTP-level Bifrost & Tavily mocks"], ["0 keys", "needed to try it — offline snapshot mode"]];
 stats.forEach(([n, l], i) => { const x = 0.6 + i * 4.1; tb(s, n, { x, y: 1.6, w: 3.8, h: 1.1, fontSize: 60, bold: true, fontFace: "Cambria", color: "B3261E" }); tb(s, l, { x, y: 2.75, w: 3.6, h: 0.8, fontSize: 15, color: "2A2620" }); });
 tb(s, [
   { text: "Support & sales bots: block or rewrite answers whose prices fail re-verification", options: { bullet: true, breakLine: true } },

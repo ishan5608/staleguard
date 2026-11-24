@@ -169,10 +169,23 @@ cp .env.example .env && docker compose up --build
 ## Usage
 
 ### Web UI
-Paste an answer (optionally the question and the model's knowledge date). Claims are highlighted in place —
-green current, red outdated, amber partial, grey unverified — click one to jump to its evidence, score
-breakdown and sources. Below: the refreshed answer (copyable) and the call trace (which provider served
-each LLM call, fallbacks, latency, tokens).
+- **One-click samples** — dev-stack advice, subscription prices, and tech/regulation news, each with a
+  realistic knowledge date, so you can see the full flow in seconds.
+- **Live progress** — results stream in over Server-Sent Events: a stepper shows *Extract → Re-verify (n/m)
+  → Score & fix*, and each claim card fills in the moment its verdict is ready.
+- **Annotated answer** — claims are highlighted in place (red outdated, amber partial, grey unverified,
+  green current). Hover or tab to a highlight for a tooltip with the verdict and current value; click to
+  jump to its card.
+- **Claim cards, most urgent first** — verdict, 0–100 score, the up-to-date value with a copy button,
+  sources with domain, date and stance, and the four score components as small meters. Filter by verdict.
+- **Corrected answer with a diff** — stale facts are replaced inline (`Python 3.11` → `Python 3.14 [1]`)
+  and shown as a sentence-aware diff, or as a clean copy ready to paste.
+- **Call trace** — every Tavily search and Bifrost call with the provider that served it, fallbacks,
+  latency and tokens.
+- **Export** — copy the report as Markdown or download it as JSON.
+- **Quality of life** — <kbd>Ctrl</kbd>+<kbd>Enter</kbd> to run, word count and a live count of
+  time-sensitive signals as you type, recent checks saved in your browser, a "How scoring works" explainer,
+  dark mode, mobile layout, keyboard focus states and reduced-motion support.
 
 ### REST API
 ```bash
@@ -184,6 +197,9 @@ curl -s localhost:8000/api/check -H 'content-type: application/json' -d '{
 ```
 Returns `overall_freshness`, `grade`, per-claim `verdict` / `freshness` / `breakdown` / `current_value` /
 `evidence[]`, `refreshed_answer`, `trace[]` and `stats`. Interactive docs at `/docs`.
+
+`POST /api/check/stream` takes the same body and streams Server-Sent Events: `stage`, `claims`, one
+`claim` per verified claim (as each finishes), then `report`. `GET /api/samples` lists the sample answers.
 
 ### CLI (works as a CI / eval gate)
 ```bash
@@ -231,11 +247,12 @@ docs/             screenshot, pitch deck (StaleGuard_pitch.pptx)
 ```bash
 pip install -r requirements-dev.txt && pytest -q
 ```
-19 tests cover classification, value extraction, version/price contradiction logic, scoring monotonicity,
+24 tests cover classification, value extraction, version/price contradiction logic, scoring monotonicity,
 the offline demo end-to-end, and the **live pipeline against HTTP-level mocks of Bifrost and Tavily** —
 asserting every LLM call hits `/v1/chat/completions` with the virtual key and fallback chain, that Bifrost's
 fallback routing info reaches the trace, that Tavily gets bearer auth + recency filters, and that the system
-degrades gracefully to heuristics when all providers return 503. GitHub Actions runs them on every push.
+degrades gracefully to heuristics when all providers return 503. They also check the streaming endpoint's
+event order and every bundled sample. GitHub Actions runs them on every push.
 
 ## Limitations and next steps
 - Offline mode's snapshot corpus is small and dated (captured late 2025) — it exists so the demo runs without

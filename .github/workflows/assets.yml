@@ -3,7 +3,7 @@ name: build docs assets
 # and commits them to docs/.
 on:
   push:
-    branches: [main]
+    branches: [main, ux-v2]
     paths-ignore: ["docs/**"]
   workflow_dispatch:
 permissions:

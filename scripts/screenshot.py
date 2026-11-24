@@ -19,10 +19,9 @@ async def main():
         browser = await p.chromium.launch()
         page = await browser.new_page(viewport={"width": 1400, "height": 1000})
         await page.goto(URL)
-        await page.click("#demo")
-        await page.wait_for_timeout(300)
-        await page.click("#go")
-        await page.wait_for_selector(".ring")
+        await page.wait_for_selector("#samples button")
+        await page.click("#samples button")          # loads the first sample and runs the check
+        await page.wait_for_selector(".grade:not(:empty) >> text=/Stale|fresh|review/i")
         await page.wait_for_timeout(500)
         await page.screenshot(path=str(OUT), type="jpeg", quality=85)
         await browser.close()

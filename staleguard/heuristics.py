@@ -31,7 +31,7 @@ _PATTERNS: list[tuple[Category, re.Pattern]] = [
         r"(\d+(\.\d+)?\s?%|\b\d[\d,.]*\s?(million|billion|crore|lakh)\b|\bmonthly active users\b|\bmarket share\b)", re.I)),
     (Category.PRODUCT, re.compile(
         r"\b(launch\w*|releas\w*|supports?|available|feature|roadmap|beta|preview|discontinu\w*|"
-        r"(is|are) (the )?(latest|newest|most recent))\b", re.I)),
+        r"(is|are) (the )?(latest|newest|most recent)|renamed|rebrand\w*|branded|called)\b", re.I)),
 ]
 
 _TEMPORAL = re.compile(r"\b(currently|now|today|latest|newest|recent(ly)?|as of|this year|still|current)\b", re.I)
@@ -61,7 +61,8 @@ def classify(sentence: str) -> Category:
         if hits:
             scores[cat] += hits
     if not scores:
-        return Category.STABLE
+        # "X is still Y" / "currently" - time-bound even without domain vocabulary
+        return Category.PRODUCT if _TEMPORAL.search(sentence) else Category.STABLE
     # ties broken by list order (pricing > version > regulation > company > stat > product)
     order = [c for c, _ in _PATTERNS]
     return max(scores, key=lambda c: (scores[c], -order.index(c)))
@@ -93,6 +94,9 @@ def key_value(sentence: str, category: Category) -> str:
             return m.group(0)
     if category == Category.COMPANY_INFO:
         m = re.search(r"\b(?:is|was|are)\s+((?:[A-Z][a-z]+\s?){2,3})", sentence)
+        if m:
+            return m.group(1).strip()
+        m = re.match(r"\s*((?:[A-Z][a-z]+\s){1,2}[A-Z][a-z]+)\s+(?:is|was|remains)\b", sentence)
         if m:
             return m.group(1).strip()
     m = _MONEY.search(sentence) or _PCT.search(sentence)
@@ -208,12 +212,13 @@ def stance_of(claim: Claim, ev_text: str) -> tuple[str, str]:
         return "supports", ""
 
     neg = re.search(r"\b(no longer|discontinued|deprecated|replaced|end[- ]of[- ]life|entered into force|"
-                    r"was adopted|has been adopted|stepped down|resigned|succeeded by)\b", low)
+                    r"was adopted|has been adopted|stepped down|resigned|succeeded by|was passed|has been passed|"
+                    r"received assent|was enacted|has been enacted|signed into law|renamed|rebranded)\b", low)
     claim_low = claim.text.lower()
     if neg and not re.search(re.escape(neg.group(0)), claim_low):
         if re.search(r"\b(not|still|yet|being negotiated|is the active|is the current)\b", claim_low):
             sent = next((x for x in re.split(r"(?<=[.!?])\s+", ev_text) if neg.group(0) in x.lower()), "")
-            return "contradicts", sent.strip()[:160]
+            return "contradicts", sent.strip()[:400]
     return "neutral", ""
 
 
@@ -237,7 +242,7 @@ def heuristic_judge(claim: Claim, evidence: list[Evidence]) -> tuple[Verdict, st
         if current and len(current) <= 40:
             msg += f"; they point to {current}."
         elif current:
-            msg += f'. Source says: "{current}"'
+            msg += "; see the up-to-date statement above."
         else:
             msg += "."
         return Verdict.OUTDATED, current, conf, msg

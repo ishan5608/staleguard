@@ -1,0 +1,8 @@
+[
+  {"id": "dev-stack", "label": "Dev stack advice", "question": "What stack should I use for a new web project?", "knowledge_date": "2024-06",
+   "answer": "For a new web project, use Python 3.11, which is the latest stable release. On the frontend, React 18 is the current major version of React. Node.js 18 is the active LTS line, so it's the safe choice for your build tooling. For AI pair programming, GitHub Copilot Individual costs $10 per month. If you serve EU users, note that the EU AI Act is still being negotiated and has not yet been adopted. Python was created by Guido van Rossum."},
+  {"id": "subscriptions", "label": "Subscription prices", "question": "How much do the popular streaming and AI subscriptions cost in the US?", "knowledge_date": "2024-01",
+   "answer": "Spotify Premium Individual costs $10.99 per month in the US. Netflix's Standard plan costs $15.49 per month in the US. ChatGPT Plus costs $20 per month. All three can be cancelled at any time."},
+  {"id": "tech-news", "label": "Tech & regulation", "question": "Quick briefing on a few tech companies and Indian data law?", "knowledge_date": "2023-05",
+   "answer": "Satya Nadella is the CEO of Microsoft. Twitter is still the name of Elon Musk's social network. India's Digital Personal Data Protection Act has not been passed yet, so companies have no new obligations. Microsoft was founded by Bill Gates and Paul Allen."}
+]

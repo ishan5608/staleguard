@@ -7,42 +7,129 @@
       "url": "https://www.python.org/downloads/release/python-3140/",
       "content": "Python 3.14.0 is the newest major release of the Python programming language, released in October 2025. It follows Python 3.13 and Python 3.12.",
       "published_date": "2025-10-07",
-      "keywords": ["python", "cpython"]
+      "keywords": [
+        "python",
+        "cpython"
+      ]
     },
     {
       "title": "Status of Python versions",
       "url": "https://devguide.python.org/versions/",
       "content": "Python 3.14 is the latest stable feature release. Python 3.13 and Python 3.12 receive bugfix or security updates; Python 3.11 is in security-fixes-only mode.",
       "published_date": "2025-10-08",
-      "keywords": ["python", "cpython"]
+      "keywords": [
+        "python",
+        "cpython"
+      ]
     },
     {
       "title": "React v19 - React blog",
       "url": "https://react.dev/blog/2024/12/05/react-19",
       "content": "React v19 is now available on npm as the new stable major version, bringing Actions, new hooks and Server Components support.",
       "published_date": "2024-12-05",
-      "keywords": ["react", "reactjs"]
+      "keywords": [
+        "react",
+        "reactjs"
+      ]
     },
     {
       "title": "Node.js previous releases",
       "url": "https://nodejs.org/en/about/previous-releases",
       "content": "Node.js 18 has reached end-of-life and no longer receives security updates. As of late 2025, Node.js 24 is the Active LTS line and Node.js 22 is in Maintenance LTS.",
       "published_date": "2025-10-28",
-      "keywords": ["node.js", "nodejs", "node", "lts"]
+      "keywords": [
+        "node.js",
+        "nodejs",
+        "node",
+        "lts"
+      ]
     },
     {
       "title": "AI Act enters into force - European Commission",
       "url": "https://commission.europa.eu/news-and-media/news/ai-act-enters-force-2024-08-01_en",
       "content": "The EU Artificial Intelligence Act (AI Act) entered into force on 1 August 2024, with obligations phasing in over the following years.",
       "published_date": "2024-08-01",
-      "keywords": ["eu", "ai act", "act", "european", "regulation"]
+      "keywords": [
+        "eu",
+        "ai act",
+        "act",
+        "european",
+        "regulation"
+      ]
     },
     {
       "title": "GitHub Copilot plans and pricing",
       "url": "https://github.com/features/copilot/plans",
       "content": "GitHub Copilot Pro (formerly Copilot Individual) costs $10 per month or $100 per year for individual developers; a limited free tier is also available.",
       "published_date": null,
-      "keywords": ["copilot", "github"]
+      "keywords": [
+        "copilot",
+        "github"
+      ]
+    },
+    {
+      "title": "Spotify Premium price increase (US)",
+      "url": "https://newsroom.spotify.com/",
+      "content": "Spotify raised the price of Premium Individual in the US to $11.99 per month in mid-2024, with Duo and Family plans also increasing.",
+      "published_date": "2024-06-03",
+      "keywords": [
+        "spotify",
+        "premium"
+      ]
+    },
+    {
+      "title": "Netflix raises US prices",
+      "url": "https://help.netflix.com/en/node/24926",
+      "content": "In the US, the Netflix Standard plan now costs $17.99 per month after the January 2025 price increase; the Standard with ads plan costs $7.99.",
+      "published_date": "2025-01-21",
+      "keywords": [
+        "netflix",
+        "standard"
+      ]
+    },
+    {
+      "title": "ChatGPT Plus - OpenAI",
+      "url": "https://openai.com/chatgpt/pricing/",
+      "content": "ChatGPT Plus costs $20 per month and includes access to OpenAI's latest models, higher usage limits and advanced features.",
+      "published_date": null,
+      "keywords": [
+        "chatgpt",
+        "plus",
+        "openai"
+      ]
+    },
+    {
+      "title": "Digital Personal Data Protection Act, 2023 - MeitY",
+      "url": "https://www.meity.gov.in/data-protection-framework",
+      "content": "The Digital Personal Data Protection Act, 2023 was passed by Parliament and received assent in August 2023, establishing India's framework for processing digital personal data.",
+      "published_date": "2023-08-11",
+      "keywords": [
+        "dpdp",
+        "digital personal data protection",
+        "india",
+        "data protection"
+      ]
+    },
+    {
+      "title": "Twitter is now X",
+      "url": "https://about.x.com/",
+      "content": "Twitter was renamed X in July 2023 as part of Elon Musk's plan to turn the social network into an 'everything app'.",
+      "published_date": "2023-07-24",
+      "keywords": [
+        "twitter",
+        "x"
+      ]
+    },
+    {
+      "title": "Satya Nadella - Chairman and CEO, Microsoft",
+      "url": "https://news.microsoft.com/exec/satya-nadella/",
+      "content": "Satya Nadella is Chairman and Chief Executive Officer of Microsoft. He became CEO in 2014.",
+      "published_date": null,
+      "keywords": [
+        "microsoft",
+        "satya nadella",
+        "ceo"
+      ]
     }
   ]
 }

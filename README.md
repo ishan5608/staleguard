@@ -185,7 +185,10 @@ cp .env.example .env && docker compose up --build
 - **Export** — copy the report as Markdown or download it as JSON.
 - **Quality of life** — <kbd>Ctrl</kbd>+<kbd>Enter</kbd> to run, word count and a live count of
   time-sensitive signals as you type, recent checks saved in your browser, a "How scoring works" explainer,
-  dark mode, mobile layout, keyboard focus states and reduced-motion support.
+  mobile layout, keyboard focus states and reduced-motion support.
+- **Two designed themes** — warm newsprint for light mode and a "midnight ink" dark mode (blue-black surfaces,
+  a coral brand gradient, luminous verdict colours). The shield logo and browser-tab icon change with the
+  theme, and a Light / System / Dark switch follows your OS setting by default.
 
 ### REST API
 ```bash

@@ -275,6 +275,7 @@ def stance_of(claim: Claim, ev_text: str) -> tuple[str, str]:
     return "neutral", ""
 
 
+_TIERS = "free|go|plus|pro|ultra|premium|advanced|max|team|business|enterprise|basic|standard|starter|individual|family|duo"
 _GENERIC = {"the", "and", "plan", "plans", "tier", "tiers", "pricing", "price", "subscription", "monthly",
             "app", "ai", "one"}
 
@@ -300,9 +301,17 @@ def _price_stance(claim: Claim, ev_text: str) -> tuple[str, str]:
     claimed = _norm_money(claim.value)
     near: list[str] = []
     for m in _MONEY.finditer(ev_text):
-        win = low[max(0, m.start() - 90): m.end() + 40]
+        before = low[max(0, m.start() - 90): m.start()]
         after = low[m.end(): m.end() + 22]
-        if not re.search(r"\b" + tier_re + r"\b", win):
+        # the product name must come *before* the price ("Google AI Ultra costs $X"), and no other
+        # tier may sit in between ("AI Ultra ... AI Pro is $19.99" is Pro's price, not Ultra's)
+        hits = list(re.finditer(r"\b" + tier_re + r"\b", before))
+        if not hits:
+            continue
+        # the word right after the name is still part of it ("Copilot Pro", "Netflix Standard")
+        between = re.sub(r"\([^)]*\)", " ", before[hits[-1].end():])          # "(formerly X Individual)"
+        between = re.sub(r"^\s*[\w+-]+", "", between, count=1)
+        if re.search(r"\b(" + _TIERS + r")\b", between.replace(tier, " ")):
             continue
         if monthly and re.search(r"(/\s?(yr|year)|per year|a year|annual|yearly)", after):
             continue                                      # annual price vs monthly claim

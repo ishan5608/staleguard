@@ -302,3 +302,12 @@ def test_unverifiable_answer_is_not_called_stale():
     assert rep.grade == "Partly verified"
     rep = run(g.check(CheckRequest(answer="Acme Widgets Pro costs $49 per month. Acme's CEO is Jane Roe.")))
     assert rep.grade == "Couldn't verify"
+
+
+def test_price_stance_uses_the_price_after_the_product_name():
+    ultra = Claim(id="u", text="Google AI Ultra ($249.99/month): launched May 2025.", category=Category.PRICING,
+                  subject="Gemini Google AI Ultra", value="$249.99")
+    page = ("For most people, Google AI Pro is the right plan. It costs $19.99 a month in the US. "
+            "Google AI Ultra costs $99.99 a month for 5x the Pro limits or $199.99 for 20x.")
+    assert heuristics.stance_of(ultra, page) == ("contradicts", "$99.99")
+    assert heuristics.stance_of(ultra, "Gemini plans: Google AI Ultra is $249.99/month.")[0] == "supports"

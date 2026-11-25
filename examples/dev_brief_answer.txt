@@ -1,0 +1,12 @@
+Here's a quick guide to the tools and subscriptions most developers use right now.
+
+Languages and frameworks
+The latest stable Python release is Python 3.12, so start new projects on it. React 18 is the current major version of React. Node.js 20 is the active LTS line and the safe default for production servers.
+
+Subscriptions
+ChatGPT Plus costs $20 per month. Spotify Premium Individual costs $10.99 per month in the US. Netflix's Standard plan costs $15.49 per month in the US.
+
+Regulation
+The EU AI Act is still being negotiated and has not been adopted yet, so there are no new obligations for AI products in Europe.
+
+Twitter is still the name of Elon Musk's social network. Python was created by Guido van Rossum.

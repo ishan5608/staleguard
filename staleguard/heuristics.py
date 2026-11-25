@@ -103,12 +103,37 @@ def key_value(sentence: str, category: Category) -> str:
     return m.group(0) if m else ""
 
 
+_SUBJ_SKIP = {"the", "a", "an", "it", "this", "as", "in", "for", "if", "on", "at", "to", "use", "note", "with",
+              "when", "while", "since", "most", "many", "all", "each", "you", "your", "we", "our", "they", "by", "from"}
+_SUBJ_PREP = {"for", "in", "on", "at", "to", "with", "by", "from", "if", "when", "while", "since", "as", "use", "note"}
+_SUBJ_VERB = re.compile(r"^(?:\s+v?\d[\d.]*)?(?:'s)?\s+(?:is|are|was|were|costs?|has|have|remains|became|launched|"
+                        r"supports|offers|charges|includes|runs|requires)\b", re.I)
+
+
 def _subject(sentence: str) -> str:
-    caps = re.findall(r"\b([A-Z][\w.+#-]*(?:\s+[A-Z][\w.+#-]*)*)", sentence)
-    skip = {"the", "a", "an", "it", "this", "as", "in", "for", "if", "on", "at", "to", "use", "note", "with",
-            "when", "while", "since", "most", "many", "all", "each", "you", "your", "we", "our", "they"}
-    caps = [c for c in caps if c.split()[0].lower() not in skip]
-    return caps[0] if caps else " ".join(sentence.split()[:4])
+    """Best guess at what a sentence is about.
+
+    Prefers the capitalised phrase that is the grammatical subject ("the EU AI Act *is*", "GitHub Copilot
+    Individual *costs*", "React 18 *is*"); otherwise the first named thing that isn't introduced by a
+    preposition ("*For* AI pair programming" is not the subject).
+    """
+    cands = []
+    for m in re.finditer(r"\b([A-Z][\w.+#-]*(?:\s+[A-Z][\w.+#-]*)*)", sentence):
+        words = m.group(1).split()
+        lead = words[0].lower()
+        while words and words[0].lower() in _SUBJ_SKIP:
+            words.pop(0)
+        if not words:
+            continue
+        phrase = " ".join(words)
+        cands.append((phrase, bool(_SUBJ_VERB.match(sentence[m.end():])), lead in _SUBJ_PREP and len(m.group(1).split()) > len(words)))
+    for phrase, is_subject, _ in cands:
+        if is_subject:
+            return phrase
+    for phrase, _, after_prep in cands:
+        if not after_prep:
+            return phrase
+    return cands[0][0] if cands else " ".join(sentence.split()[:4])
 
 
 _LABEL = re.compile(r"^\s*(?:[-*•]\s*)?([A-Z][\w .+&/-]{0,40}?)\s*(\([^)]*\))?\s*:\s+")
@@ -116,13 +141,37 @@ _GENERIC_LABELS = {"overall trend", "note", "summary", "overall", "tip", "flagsh
                    "in short", "bottom line", "tl;dr", "example"}
 
 
-def _heading(line: str) -> str:
-    """A short line with no sentence punctuation ("OpenAI (ChatGPT)", "## Google") sets the context
-    for the lines under it."""
-    t = line.strip().strip("#*_ ").rstrip(":")
+_SECTION_WORDS = {
+    "languages", "language", "frameworks", "framework", "subscriptions", "subscription", "regulation", "regulations",
+    "pricing", "prices", "plans", "tools", "tooling", "models", "overview", "summary", "background", "notes",
+    "conclusion", "introduction", "setup", "installation", "requirements", "features", "products", "companies",
+    "news", "laws", "legal", "compliance", "security", "hardware", "software", "apps", "services", "frontend",
+    "backend", "databases", "cloud", "recommendations", "tips", "options", "comparison", "details", "key", "facts",
+    "and", "&", "the", "of", "other", "general", "misc", "resources", "updates", "policy", "policies", "people",
+    "leadership", "runtime", "runtimes", "libraries", "stack", "infrastructure", "ai", "web",
+}
+
+
+def _heading(line: str) -> Optional[str]:
+    """Classify a line as a section heading.
+
+    Returns None for ordinary lines. For a heading (short, no sentence punctuation) returns the context
+    it sets for the lines under it: a named product or company ("OpenAI (ChatGPT)", "## Google") is
+    kept; a generic section title ("Subscriptions", "Languages and frameworks") returns "" so it
+    resets the context instead of polluting every search query below it.
+    """
+    t = line.strip().strip("#*_ ").rstrip(":").strip()
     if not t or len(t.split()) > 6 or re.search(r"[.!?]$", t) or _MONEY.search(t):
+        return None
+    words = [w for w in re.findall(r"[A-Za-z][\w.+&-]*", t)]
+    if words and all(w.lower() in _SECTION_WORDS for w in words):
         return ""
     return re.sub(r"[()]", " ", t).strip()
+
+
+_META = re.compile(r"^\s*(here'?s|here is|here are|below (is|are)|in summary|to summarize|overall,|hope this|"
+                   r"i hope|let me know|sure[,!]|great question|feel free|note that this|keep in mind that "
+                   r"(prices|details) (may|can))", re.I)
 
 
 def _words(t: str) -> list[str]:
@@ -136,7 +185,7 @@ def heuristic_claims(answer: str, max_claims: int = 8) -> list[Claim]:
         if not line.strip():
             continue
         h = _heading(line)
-        if h:
+        if h is not None:
             context = re.sub(r"\s+", " ", h)
             continue
         label, line_ctx = "", context
@@ -148,7 +197,7 @@ def heuristic_claims(answer: str, max_claims: int = 8) -> list[Claim]:
             elif lab.lower() not in _GENERIC_LABELS:
                 label = lab
         for sent in split_sentences(line):
-            if sent not in answer:          # keep spans exact for highlighting
+            if sent not in answer or _META.match(sent):   # exact spans only; skip "Here's a quick guide..."
                 continue
             cat = classify(sent)
             if label:
@@ -230,6 +279,12 @@ def _keywords(claim: Claim) -> set[str]:
     return {w for w in words if w not in stop}
 
 
+_NEG = re.compile(r"\b(no longer|discontinued|deprecated|replaced|end[- ]of[- ]life|entered into force|"
+                  r"was adopted|has been adopted|stepped down|resigned|succeeded by|was passed|has been passed|"
+                  r"received assent|was enacted|has been enacted|signed into law|renamed|rebranded)\b")
+_GENERIC_SUBJ = {"the", "and", "of", "a", "an", "its", "it", "this"}
+
+
 def stance_of(claim: Claim, ev_text: str) -> tuple[str, str]:
     """Return (stance, competing_value) of one evidence snippet toward a claim."""
     low = ev_text.lower()
@@ -264,14 +319,17 @@ def stance_of(claim: Claim, ev_text: str) -> tuple[str, str]:
     if claim.value and claim.value.lower() in low:
         return "supports", ""
 
-    neg = re.search(r"\b(no longer|discontinued|deprecated|replaced|end[- ]of[- ]life|entered into force|"
-                    r"was adopted|has been adopted|stepped down|resigned|succeeded by|was passed|has been passed|"
-                    r"received assent|was enacted|has been enacted|signed into law|renamed|rebranded)\b", low)
+    neg = _NEG.search(low)
     claim_low = claim.text.lower()
     if neg and not re.search(re.escape(neg.group(0)), claim_low):
         if re.search(r"\b(not|still|yet|being negotiated|is the active|is the current)\b", claim_low):
-            sent = next((x for x in re.split(r"(?<=[.!?])\s+", ev_text) if neg.group(0) in x.lower()), "")
-            return "contradicts", sent.strip()[:400]
+            # the status change must be about *this* subject: "The EU AI Act entered into force..." counts,
+            # an unrelated "It entered into force on ..." from the same page does not
+            key = [w for w in _words(claim.subject) if w not in _GENERIC_SUBJ] or _words(claim.subject)
+            for sent in re.split(r"(?<=[.!?])\s+", ev_text):
+                sl = sent.lower()
+                if _NEG.search(sl) and key and all(re.search(r"\b" + re.escape(w) + r"\b", sl) for w in key):
+                    return "contradicts", sent.strip()[:400]
     return "neutral", ""
 
 

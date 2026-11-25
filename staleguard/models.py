@@ -83,7 +83,7 @@ class CheckRequest(BaseModel):
     knowledge_date: Optional[str] = Field(
         None, description="When the answer's knowledge is from (YYYY-MM or YYYY-MM-DD); "
                           "defaults to the model cutoff if unknown")
-    max_claims: int = 8
+    max_claims: int = 12
     rewrite: bool = True
 
 

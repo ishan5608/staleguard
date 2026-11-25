@@ -1,3 +1,4 @@
+import re
 import asyncio
 import json
 from datetime import date
@@ -311,3 +312,36 @@ def test_price_stance_uses_the_price_after_the_product_name():
             "Google AI Ultra costs $99.99 a month for 5x the Pro limits or $199.99 for 20x.")
     assert heuristics.stance_of(ultra, page) == ("contradicts", "$99.99")
     assert heuristics.stance_of(ultra, "Gemini plans: Google AI Ultra is $249.99/month.")[0] == "supports"
+
+
+# ------------------------------------------- regressions from the second live run
+
+BRIEF = (Path(__file__).parent.parent / "examples" / "dev_brief_answer.txt").read_text()
+
+
+def test_generic_headings_do_not_leak_into_claims():
+    claims = heuristics.heuristic_claims(BRIEF, 12)
+    texts = [c.text for c in claims]
+    assert not any(t.startswith("Here's a quick guide") for t in texts)        # filler, not a fact
+    assert any("Twitter" in t for t in texts)                                   # all facts fit
+    for c in claims:
+        assert not re.search(r"\b(Subscriptions|Regulation|Languages)\b", c.subject + " " + c.search_query), c
+    netflix = next(c for c in claims if "Netflix" in c.text)
+    assert heuristics.stance_of(netflix, "The Netflix Standard plan now costs $17.99 per month in the US.")[0] == "contradicts"
+
+
+def test_status_change_must_name_the_subject():
+    eu = next(c for c in heuristics.heuristic_claims(BRIEF, 12) if "EU AI Act" in c.text)
+    assert eu.subject == "EU AI Act"
+    unrelated = "Some other regulation was updated. It entered into force on July 27, 2026."
+    assert heuristics.stance_of(eu, "The EU AI Act and its rules. " + unrelated)[0] == "neutral"
+    good = "The EU Artificial Intelligence Act (AI Act) entered into force on 1 August 2024."
+    stance, now = heuristics.stance_of(eu, good)
+    assert stance == "contradicts" and "1 August 2024" in now
+
+
+def test_named_headings_still_set_context():
+    assert heuristics._heading("OpenAI (ChatGPT)").startswith("OpenAI")
+    assert heuristics._heading("Subscriptions") == ""
+    assert heuristics._heading("Languages and frameworks") == ""
+    assert heuristics._heading("This is a full sentence.") is None

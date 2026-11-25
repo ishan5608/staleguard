@@ -22,6 +22,9 @@ _RECENCY_WINDOW_DAYS = {
 }
 
 
+SOCIAL_DOMAINS = ["instagram.com", "facebook.com", "tiktok.com", "pinterest.com", "quora.com", "threads.net"]
+
+
 class TavilyClient:
     def __init__(self, settings: Settings, client: Optional[httpx.AsyncClient] = None):
         self.s = settings
@@ -54,6 +57,8 @@ class TavilyClient:
         if include_domains:
             body["include_domains"] = include_domains
             body["include_domains_mode"] = "prefer"
+        # social posts and Q&A threads are opinions, not evidence
+        body["exclude_domains"] = SOCIAL_DOMAINS
 
         t0 = time.perf_counter()
         entry = CallTrace(kind="search", purpose=category.value, target=query, served_by="tavily")

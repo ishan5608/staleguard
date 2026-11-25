@@ -345,3 +345,42 @@ def test_named_headings_still_set_context():
     assert heuristics._heading("Subscriptions") == ""
     assert heuristics._heading("Languages and frameworks") == ""
     assert heuristics._heading("This is a full sentence.") is None
+
+
+# -------------------------------------------- regressions from the third live run
+
+def test_possessive_product_names_and_ad_tiers():
+    netflix = next(c for c in heuristics.heuristic_claims(BRIEF, 12) if "Netflix" in c.text)
+    assert netflix.subject == "Netflix Standard"
+    page = ("Netflix plans in the US: Standard with ads costs $8.99 per month. "
+            "The Netflix Standard plan costs $17.99 per month, and Premium is $24.99.")
+    assert heuristics.stance_of(netflix, page) == ("contradicts", "$17.99")
+    assert heuristics.stance_of(netflix, "Netflix pricing. Standard plan: $15.49 per month.")[0] == "supports"
+
+
+def test_status_statement_is_cleaned():
+    tw = next(c for c in heuristics.heuristic_claims(BRIEF, 12) if "Twitter" in c.text)
+    stance, now = heuristics.stance_of(tw, 'Scooby on Instagram: "In July 2023, Elon Musk officially rebranded Twitter to X.')
+    assert stance == "contradicts" and now.startswith("In July 2023") and "Instagram" not in now
+    eu = next(c for c in heuristics.heuristic_claims(BRIEF, 12) if "EU AI Act" in c.text)
+    stance, now = heuristics.stance_of(eu, "## Background\n\nThe EU AI Act entered into force on 1 August 2024.")
+    assert now.startswith("The EU AI Act entered into force")
+
+
+def test_social_sites_are_excluded_from_search():
+    seen = []
+    def handler(request):
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json={"results": []})
+    s = Settings(mode="live", tavily_api_key="tvly-test")
+    t = TavilyClient(s, httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    run(t.search("Twitter name", Category.PRODUCT, []))
+    assert "instagram.com" in seen[0]["exclude_domains"]
+
+
+def test_version_mention_is_not_confirmation():
+    react = Claim(id="r", text="React 18 is the current major version of React.", category=Category.API_VERSION,
+                  subject="React", value="18")
+    assert heuristics.stance_of(react, "React 18 introduced automatic batching and concurrent rendering.")[0] == "neutral"
+    assert heuristics.stance_of(react, "React 18 is the latest stable release of React.")[0] == "supports"
+    assert heuristics.stance_of(react, "React 19 is now the latest stable version.")[0] == "contradicts"

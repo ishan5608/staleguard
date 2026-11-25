@@ -118,8 +118,8 @@ def _subject(sentence: str) -> str:
     preposition ("*For* AI pair programming" is not the subject).
     """
     cands = []
-    for m in re.finditer(r"\b([A-Z][\w.+#-]*(?:\s+[A-Z][\w.+#-]*)*)", sentence):
-        words = m.group(1).split()
+    for m in re.finditer(r"\b([A-Z][\w.+#-]*(?:'s)?(?:\s+[A-Z][\w.+#-]*)*)", sentence):
+        words = [re.sub(r"'s$", "", w) for w in m.group(1).split()]
         lead = words[0].lower()
         while words and words[0].lower() in _SUBJ_SKIP:
             words.pop(0)
@@ -285,6 +285,15 @@ _NEG = re.compile(r"\b(no longer|discontinued|deprecated|replaced|end[- ]of[- ]l
 _GENERIC_SUBJ = {"the", "and", "of", "a", "an", "its", "it", "this"}
 
 
+def _clean_statement(sent: str) -> str:
+    """Tidy a sentence lifted from a web page: markdown, "X on Instagram:" prefixes, stray quotes."""
+    t = re.sub(r"[#*_`>]+", " ", sent)
+    t = re.sub(r"^.{0,60}?\b(on|via) (instagram|facebook|x|twitter|tiktok|linkedin|threads|youtube)\s*:\s*", "", t, flags=re.I)
+    t = re.sub(r"^[^A-Za-z0-9]+", "", t)
+    t = re.sub(r"\s+", " ", t).strip().strip('"\u201c\u201d ')
+    return t[0].upper() + t[1:] if t else t
+
+
 def stance_of(claim: Claim, ev_text: str) -> tuple[str, str]:
     """Return (stance, competing_value) of one evidence snippet toward a claim."""
     low = ev_text.lower()
@@ -310,8 +319,11 @@ def stance_of(claim: Claim, ev_text: str) -> tuple[str, str]:
             if newer and re.search(r"\b(latest|new|released|now|stable|current|introduc|end[- ]of[- ]life|eol)", low):
                 best = max(newer)
                 return "contradicts", ".".join(map(str, best[: max(len(c), 2) if best[0] == c[0] else len(c)]))
-            if same_major and not newer:
+            # a page that merely mentions "React 18" doesn't confirm it's still the current version
+            if same_major and not newer and re.search(r"\b(latest|current(ly)?|newest|stable|active lts|most recent)\b", low):
                 return "supports", ""
+            if same_major and not newer:
+                return "neutral", ""
 
     if claim.category == Category.PRICING and claim.value:
         return _price_stance(claim, ev_text)
@@ -326,10 +338,10 @@ def stance_of(claim: Claim, ev_text: str) -> tuple[str, str]:
             # the status change must be about *this* subject: "The EU AI Act entered into force..." counts,
             # an unrelated "It entered into force on ..." from the same page does not
             key = [w for w in _words(claim.subject) if w not in _GENERIC_SUBJ] or _words(claim.subject)
-            for sent in re.split(r"(?<=[.!?])\s+", ev_text):
+            for sent in re.split(r"(?<=[.!?])\s+|\n+", ev_text):
                 sl = sent.lower()
                 if _NEG.search(sl) and key and all(re.search(r"\b" + re.escape(w) + r"\b", sl) for w in key):
-                    return "contradicts", sent.strip()[:400]
+                    return "contradicts", _clean_statement(sent)[:400]
     return "neutral", ""
 
 
@@ -364,12 +376,18 @@ def _price_stance(claim: Claim, ev_text: str) -> tuple[str, str]:
         # the product name must come *before* the price ("Google AI Ultra costs $X"), and no other
         # tier may sit in between ("AI Ultra ... AI Pro is $19.99" is Pro's price, not Ultra's)
         hits = list(re.finditer(r"\b" + tier_re + r"\b", before))
+        if not hits and len(subj) >= 2 and any(re.search(r"\b" + re.escape(b) + r"\b", before) for b in brand):
+            hits = list(re.finditer(r"\b" + re.escape(tier) + r"\b", before))   # "Netflix ... Standard plan: $X"
         if not hits:
             continue
         # the word right after the name is still part of it ("Copilot Pro", "Netflix Standard")
         between = re.sub(r"\([^)]*\)", " ", before[hits[-1].end():])          # "(formerly X Individual)"
         between = re.sub(r"^\s*[\w+-]+", "", between, count=1)
         if re.search(r"\b(" + _TIERS + r")\b", between.replace(tier, " ")):
+            continue
+        # a variant of the plan ("Standard with ads", "student", "annual") is a different price
+        variant = re.search(r"\b(with ads|ad-supported|ads|student|annual|yearly|education|nonprofit)\b", between)
+        if variant and variant.group(1) not in claim.text.lower():
             continue
         if monthly and re.search(r"(/\s?(yr|year)|per year|a year|annual|yearly)", after):
             continue                                      # annual price vs monthly claim

@@ -411,11 +411,15 @@ function summary() {
       <p class="verdict-line">${S.stage === "extract" ? "Finding facts that can go out of date." : "Searching the web and judging each claim as results come in."}</p></div></div>`;
   }
   const s = rep.stats, n = rep.overall_freshness, bad = s.outdated + s.partially_current, checked = s.claims - s.skipped;
-  const line = bad ? `${bad} of ${checked} checked claim${checked === 1 ? "" : "s"} ${bad === 1 ? "is" : "are"} out of date.` : s.current ? "Every checked claim is backed by current sources." : "Nothing could be confirmed either way.";
+  const line = bad ? `${bad} of ${checked} checked claim${checked === 1 ? "" : "s"} ${bad === 1 ? "is" : "are"} out of date.`
+    : s.unverified && s.current ? `${s.current} claim${s.current === 1 ? "" : "s"} confirmed, ${s.unverified} couldn't be verified — nothing was found to be out of date.`
+    : s.unverified ? "No sources settled these claims either way — nothing was found to be out of date, but nothing was confirmed."
+    : "Every checked claim is backed by current sources.";
+  const gradeColor = rep.grade === "Couldn't verify" || rep.grade === "Partly verified" ? "var(--unv)" : color(n);
   const f = (k, label, c) => `<button class="f-btn" type="button" data-f="${k}" aria-pressed="${S.filter === k}"><span class="sw" style="background:${c}"></span>${label} ${k === "all" ? s.claims : s[k]}</button>`;
   return `<div class="summary">
     <div class="ring" style="--c:${color(n)};--v:${n}"><div><span><b>${n}</b><small>/100 fresh</small></span></div></div>
-    <div style="flex:1;min-width:240px"><p class="grade" style="color:${color(n)}">${esc(rep.grade)}</p>
+    <div style="flex:1;min-width:240px"><p class="grade" style="color:${gradeColor}">${esc(rep.grade)}</p>
       <p class="verdict-line">${line}</p>
       <div class="filters" role="group" aria-label="Filter claims">${f("all", "All", "var(--ink)")}${f("outdated", "Outdated", "var(--stale)")}${f("partially_current", "Partial", "var(--part)")}${f("unverified", "Unverified", "var(--unv)")}${f("current", "Current", "var(--fresh)")}${f("skipped", "Timeless", "var(--line2)")}</div>
     </div>

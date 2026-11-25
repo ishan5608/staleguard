@@ -246,3 +246,59 @@ def test_server_stream_and_samples():
         body = "".join(r.iter_text())
     assert "event: claims" in body and "event: report" in body
     assert c.post("/api/check/stream", json={"answer": " "}).status_code == 400
+
+
+# ----------------------------------- regressions found in the first live (Tavily) run
+
+PLANS = (Path(__file__).parent.parent / "examples" / "plans_answer.txt").read_text()
+
+
+def test_section_context_and_queries():
+    claims = heuristics.heuristic_claims(PLANS, 10)
+    plus = next(c for c in claims if c.text.startswith("Plus ($20/month)"))
+    assert plus.subject == "OpenAI ChatGPT Plus" and plus.value == "$20"
+    assert "ChatGPT Plus" in plus.search_query and "$20" not in plus.search_query
+    ultra = next(c for c in claims if "Ultra" in c.text)
+    assert "Google" in ultra.subject and "OpenAI" not in ultra.subject
+    # numbers that aren't prices survive in queries ("o1" must not become "o")
+    q = heuristics.build_query("unlimited access to o1 since 2024 for $200/month", Category.PRICING)
+    assert "o1" in q and "2024" in q and "$200" not in q
+    q = heuristics.build_query("Pro ($200/month): unlimited access to o1", Category.PRICING, "OpenAI ChatGPT Pro")
+    assert q.startswith("OpenAI ChatGPT Pro") and "$200" not in q and "()" not in q
+    assert all(c.span in PLANS for c in claims)
+
+
+def test_price_stance_ignores_unrelated_pages():
+    plus = Claim(id="x", text="Plus ($20/month): the main paid tier.", category=Category.PRICING,
+                 subject="OpenAI ChatGPT Plus", value="$20")
+    assert heuristics.stance_of(plus, "GoPro Premium+ costs $24.99 per year.")[0] == "neutral"
+    assert heuristics.stance_of(plus, "Genspark pricing: Plus plan $24.99/month.")[0] == "neutral"
+    assert heuristics.stance_of(plus, "Claude Pro costs $20/month; Claude Max is $100.")[0] == "neutral"
+    assert heuristics.stance_of(plus, "ChatGPT Plus costs $20 per month.")[0] == "supports"
+    assert heuristics.stance_of(plus, "OpenAI raised ChatGPT Plus to $22 per month.") == ("contradicts", "$22")
+    assert heuristics.stance_of(plus, "ChatGPT Plus: $20/month or $200 per year.")[0] == "supports"
+
+
+def test_price_stance_keeps_same_named_tiers_apart():
+    page = "ChatGPT Plus costs $20/month and ChatGPT Pro $200/month. Google AI Pro is $19.99/month."
+    gpro = Claim(id="x", text="Google AI Pro ($19.99/month): replaced Gemini Advanced.", category=Category.PRICING,
+                 subject="Gemini Google AI Pro", value="$19.99")
+    cpro = Claim(id="y", text="Pro ($200/month): unlimited o1.", category=Category.PRICING,
+                 subject="OpenAI ChatGPT Pro", value="$200")
+    assert heuristics.stance_of(gpro, page)[0] == "supports"
+    assert heuristics.stance_of(cpro, page)[0] == "supports"
+
+
+def test_money_suffix_needs_word_boundary():
+    assert heuristics.key_value("a roughly $20 mid tier", Category.PRICING) == "$20"
+    assert heuristics.key_value("raised $6.6 billion", Category.PRICING) == "$6.6 billion".replace(" ", "")
+
+
+def test_unverifiable_answer_is_not_called_stale():
+    g = StaleGuard(Settings(mode="offline"))
+    rep = run(g.check(CheckRequest(answer=PLANS)))
+    assert not any(r.verdict == Verdict.OUTDATED for r in rep.claims)
+    assert any(r.verdict == Verdict.CURRENT for r in rep.claims)      # ChatGPT Plus $20 is in the snapshot
+    assert rep.grade == "Partly verified"
+    rep = run(g.check(CheckRequest(answer="Acme Widgets Pro costs $49 per month. Acme's CEO is Jane Roe.")))
+    assert rep.grade == "Couldn't verify"

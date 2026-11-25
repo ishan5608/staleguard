@@ -1,0 +1,19 @@
+OpenAI (ChatGPT)
+
+Free: Launched with GPT-3.5. Later tiers gave free users GPT-4o access, which OpenAI restricted to paid subscribers in August 2025.
+Plus ($20/month): Launched in February 2023 and remains the main paid tier. It has included GPT-4, GPT-4o, and later GPT-5 access.
+Pro ($200/month): Introduced in late 2024 with unlimited access to o1, the reasoning model that was then the company's strongest. OpenAI later added a $100 Pro tier with lower usage limits.
+Team and Enterprise: Business tiers for organizations, with pricing that has been more stable than the consumer plans.
+
+Flagship models: GPT-3 (API, 2020), GPT-4 (March 2023), GPT-4o (May 2024), o1 (December 2024), and GPT-5 (August 2025).
+
+Google (Gemini)
+
+Free: Gemini app access with limited usage, using the models current at each point.
+Google One AI Premium / Gemini Advanced ($19.99/month): Launched in February 2024 as Google's first paid Gemini tier, giving access to its top model.
+Google AI Pro ($19.99/month): Replaced the Gemini Advanced branding at Google I/O in May 2025, adding 2 TB of storage and higher limits.
+Google AI Ultra ($249.99/month): Also launched in May 2025 for power users, with exclusive access to the Deep Think reasoning mode and the Veo 3 video model.
+
+Flagship models: Gemini 1.0 (December 2023), Gemini 1.5 Pro (2024), Gemini 2.0 (December 2024), and Gemini 2.5 Pro (March 2025), which became the default top model on Pro and Ultra plans.
+
+Overall trend: Both companies settled on a similar structure: a free tier, a roughly $20 mid tier, and a premium tier above $200 for heavy users. Pricing and model names changed often, so check each company's current pricing page for exact figures.

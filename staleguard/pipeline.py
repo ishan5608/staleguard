@@ -177,8 +177,16 @@ class StaleGuard:
     def _report(self, req, results, refreshed, trace, kd, t0) -> CheckReport:
         score = scoring.overall(results)
         counts = {v.value: sum(r.verdict == v for r in results) for v in Verdict}
+        # Only call an answer stale when something was actually shown to be out of date;
+        # claims we couldn't check are reported as such instead of dragging the grade down.
+        if counts["outdated"] or counts["partially_current"] or not counts["unverified"]:
+            grade = scoring.grade(score)
+        elif counts["current"]:
+            grade = "Partly verified"
+        else:
+            grade = "Couldn't verify"
         return CheckReport(
-            question=req.question, answer=req.answer, overall_freshness=score, grade=scoring.grade(score),
+            question=req.question, answer=req.answer, overall_freshness=score, grade=grade,
             claims=results, refreshed_answer=refreshed,
             checked_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
             mode=self.mode, trace=trace,

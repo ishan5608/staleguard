@@ -36,7 +36,7 @@ _PATTERNS: list[tuple[Category, re.Pattern]] = [
 
 _TEMPORAL = re.compile(r"\b(currently|now|today|latest|newest|recent(ly)?|as of|this year|still|current)\b", re.I)
 
-_MONEY = re.compile(r"[$€£₹]\s?\d[\d,]*(\.\d+)?(\s?(k|m|b|million|billion))?", re.I)
+_MONEY = re.compile(r"[$€£₹]\s?\d[\d,]*(\.\d+)?(\s?(k|m|b|million|billion)\b)?", re.I)
 _VERSION = re.compile(r"\b(?:v)?(\d+)(?:\.(\d+))?(?:\.(\d+))?\b")
 _PCT = re.compile(r"\d+(\.\d+)?\s?%")
 _YEAR = re.compile(r"\b(19|20)\d{2}\b")
@@ -111,30 +111,88 @@ def _subject(sentence: str) -> str:
     return caps[0] if caps else " ".join(sentence.split()[:4])
 
 
+_LABEL = re.compile(r"^\s*(?:[-*•]\s*)?([A-Z][\w .+&/-]{0,40}?)\s*(\([^)]*\))?\s*:\s+")
+_GENERIC_LABELS = {"overall trend", "note", "summary", "overall", "tip", "flagship models", "models", "pricing",
+                   "in short", "bottom line", "tl;dr", "example"}
+
+
+def _heading(line: str) -> str:
+    """A short line with no sentence punctuation ("OpenAI (ChatGPT)", "## Google") sets the context
+    for the lines under it."""
+    t = line.strip().strip("#*_ ").rstrip(":")
+    if not t or len(t.split()) > 6 or re.search(r"[.!?]$", t) or _MONEY.search(t):
+        return ""
+    return re.sub(r"[()]", " ", t).strip()
+
+
+def _words(t: str) -> list[str]:
+    return re.findall(r"[a-z0-9][a-z0-9.+#-]*", t.lower())
+
+
 def heuristic_claims(answer: str, max_claims: int = 8) -> list[Claim]:
     claims: list[Claim] = []
-    for i, sent in enumerate(split_sentences(answer)):
-        cat = classify(sent)
-        claims.append(Claim(
-            id=f"c{i + 1}",
-            text=sent,
-            span=sent,
-            category=cat,
-            subject=_subject(sent),
-            value=key_value(sent, cat),
-            time_sensitive=cat != Category.STABLE,
-            search_query=build_query(sent, cat),
-        ))
+    context = ""
+    for line in answer.splitlines():
+        if not line.strip():
+            continue
+        h = _heading(line)
+        if h:
+            context = re.sub(r"\s+", " ", h)
+            continue
+        label, line_ctx = "", context
+        m = _LABEL.match(line)
+        if m:
+            lab = m.group(1).strip()
+            if lab.lower() in {"overall trend", "overall", "summary", "in short", "bottom line", "tl;dr", "note"}:
+                line_ctx = ""                                   # wrap-up lines aren't about the last section
+            elif lab.lower() not in _GENERIC_LABELS:
+                label = lab
+        for sent in split_sentences(line):
+            if sent not in answer:          # keep spans exact for highlighting
+                continue
+            cat = classify(sent)
+            if label:
+                lw = set(_words(label))
+                subject = " ".join([w for w in line_ctx.split() if w.lower() not in lw] + [label])
+            elif line_ctx and not set(_words(line_ctx)) & set(_words(sent)):
+                subject = f"{line_ctx} {_subject(sent)}"
+            else:
+                subject = _subject(sent)
+            claims.append(Claim(
+                id=f"c{len(claims) + 1}",
+                text=sent,
+                span=sent,
+                category=cat,
+                subject=subject,
+                attribute="tier" if label else "",
+                value=key_value(sent, cat),
+                time_sensitive=cat != Category.STABLE,
+                search_query=build_query(sent, cat, subject if (line_ctx or label) else ""),
+            ))
     # keep the riskiest ones, preserve answer order
     ranked = sorted(claims, key=lambda c: -risk_score(c.text))
     keep = {c.id for c in ranked[:max_claims]}
     return [c for c in claims if c.id in keep]
 
 
-def build_query(sentence: str, category: Category) -> str:
+_PRICE_FULL = re.compile(r"[$€£₹]\s?\d[\d,.]*(\s?(k|m|b|million|billion))?(\s?(/|per\s)\s?(month|mo|year|yr|user|seat))?", re.I)
+
+
+def build_query(sentence: str, category: Category, context: str = "") -> str:
     q = re.sub(r"\b(currently|now|today|as of \w+ \d{4}|as of \d{4}|still)\b", "", sentence, flags=re.I)
-    q = re.sub(r"[$€£₹]?\d[\d,.]*\s?%?", "", q) if category in (Category.PRICING, Category.STATISTIC) else q
-    q = re.sub(r"\s+", " ", q).strip(" .")
+    if category in (Category.PRICING, Category.STATISTIC):
+        # don't put the asserted value in the query - it biases results toward confirming it
+        q = _PRICE_FULL.sub("", q)
+        q = re.sub(r"\d+(\.\d+)?\s?%", "", q)
+    q = re.sub(r"\(\s*[/,;]?\s*\)", "", q)            # leftover "()" / "(/month)"
+    q = re.sub(r"\s+", " ", q).strip(" .:")
+    if context:
+        missing = [w for w in context.split() if w.lower() not in q.lower()]
+        if missing:
+            q = " ".join(missing) + " " + q
+        if category == Category.PRICING:
+            q = q.split(":")[0] if len(q.split(":")[0].split()) >= 2 else q   # "OpenAI ChatGPT Plus: ..." -> name only
+    q = re.sub(r"\s+", " ", q).strip()
     suffix = {
         Category.PRICING: "current pricing",
         Category.API_VERSION: "latest version release",
@@ -201,12 +259,7 @@ def stance_of(claim: Claim, ev_text: str) -> tuple[str, str]:
                 return "supports", ""
 
     if claim.category == Category.PRICING and claim.value:
-        claimed = _norm_money(claim.value)
-        found = [_norm_money(m.group(0)) for m in _MONEY.finditer(ev_text)]
-        if claimed in found:
-            return "supports", ""
-        if found:
-            return "contradicts", _MONEY.search(ev_text).group(0)
+        return _price_stance(claim, ev_text)
 
     if claim.value and claim.value.lower() in low:
         return "supports", ""
@@ -220,6 +273,46 @@ def stance_of(claim: Claim, ev_text: str) -> tuple[str, str]:
             sent = next((x for x in re.split(r"(?<=[.!?])\s+", ev_text) if neg.group(0) in x.lower()), "")
             return "contradicts", sent.strip()[:400]
     return "neutral", ""
+
+
+_GENERIC = {"the", "and", "plan", "plans", "tier", "tiers", "pricing", "price", "subscription", "monthly",
+            "app", "ai", "one"}
+
+
+def _price_stance(claim: Claim, ev_text: str) -> tuple[str, str]:
+    """Compare prices only where the evidence talks about the same product and billing period.
+
+    A page listing many products (or an unrelated one) shouldn't count as contradicting a price just
+    because it contains some other dollar amount.
+    """
+    low = ev_text.lower()
+    subj = [w for w in _words(claim.subject) if len(w) >= 2]
+    if not subj:
+        return "neutral", ""
+    tier = subj[-1]                                       # "plus" in "openai chatgpt plus"
+    brand = [w for w in subj[:-1] if w not in _GENERIC] or subj
+    # "chatgpt plus" / "ai pro": the tier together with the word before it, so ChatGPT Pro and
+    # Google AI Pro prices are never mixed up on comparison pages
+    tier_re = (re.escape(subj[-2]) + r"\s+" if len(subj) >= 2 else "") + re.escape(tier)
+    if not any(re.search(r"\b" + re.escape(b) + r"\b", low) for b in brand):
+        return "neutral", ""                              # page isn't about this company/product
+    monthly = bool(re.search(r"/\s?mo|month", claim.text, re.I))
+    claimed = _norm_money(claim.value)
+    near: list[str] = []
+    for m in _MONEY.finditer(ev_text):
+        win = low[max(0, m.start() - 90): m.end() + 40]
+        after = low[m.end(): m.end() + 22]
+        if not re.search(r"\b" + tier_re + r"\b", win):
+            continue
+        if monthly and re.search(r"(/\s?(yr|year)|per year|a year|annual|yearly)", after):
+            continue                                      # annual price vs monthly claim
+        near.append(_norm_money(m.group(0)))
+    if not near:
+        return "neutral", ""
+    if claimed in near:
+        return "supports", ""
+    best = Counter(near).most_common(1)[0][0]
+    return "contradicts", best if best.startswith(("$", "€", "£", "₹")) else "$" + best
 
 
 def heuristic_judge(claim: Claim, evidence: list[Evidence]) -> tuple[Verdict, str, float, str]:

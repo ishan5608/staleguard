@@ -33,9 +33,11 @@ if (-not $env:TAVILY_API_KEY)    { Write-Host "Set `$env:TAVILY_API_KEY first (h
 if (-not $env:ANTHROPIC_API_KEY) { Write-Host "Set `$env:ANTHROPIC_API_KEY first (https://console.anthropic.com)." -ForegroundColor Red; exit 1 }
 if (-not (Get-Command npx -ErrorAction SilentlyContinue)) { Write-Host "Node.js is required for Bifrost: https://nodejs.org" -ForegroundColor Red; exit 1 }
 
-if (-not $env:EXTRACT_MODEL) { $env:EXTRACT_MODEL = "anthropic/claude-haiku-5-5" }
-if (-not $env:JUDGE_MODEL)   { $env:JUDGE_MODEL   = "anthropic/claude-sonnet-5-5" }
-if (-not $env:LLM_FALLBACKS) { $env:LLM_FALLBACKS = "anthropic/claude-sonnet-5-5,anthropic/claude-haiku-5-5" }
+# Claude models only: anything else (e.g. old openai/... lines in .env) is replaced with the defaults
+if ($env:EXTRACT_MODEL -notlike "anthropic/*") { $env:EXTRACT_MODEL = "anthropic/claude-haiku-5-5" }
+if ($env:JUDGE_MODEL   -notlike "anthropic/*") { $env:JUDGE_MODEL   = "anthropic/claude-sonnet-5-5" }
+$fallbacks = @(($env:LLM_FALLBACKS -split ",") | ForEach-Object { $_.Trim() } | Where-Object { $_ -like "anthropic/*" })
+$env:LLM_FALLBACKS = if ($fallbacks.Count) { $fallbacks -join "," } else { "anthropic/claude-sonnet-5-5,anthropic/claude-haiku-5-5" }
 $models = @($env:EXTRACT_MODEL, $env:JUDGE_MODEL) + ($env:LLM_FALLBACKS -split ",") |
           Where-Object { $_ } | ForEach-Object { ($_ -split "/", 2)[-1].Trim() } | Sort-Object -Unique
 
@@ -48,7 +50,10 @@ $config = @{ providers = @{ anthropic = @{ keys = @(@{ name = "anthropic"; value
 
 $env:STALEGUARD_MODE = "live"
 $env:BIFROST_URL = "http://localhost:$BifrostPort"
-$env:BIFROST_VIRTUAL_KEY = ""
+# this Bifrost has no governance config, so no virtual key; and stop StaleGuard re-reading .env,
+# whose old lines (models, virtual key) would otherwise fill in anything left unset here
+Remove-Item env:BIFROST_VIRTUAL_KEY -ErrorAction SilentlyContinue
+$env:STALEGUARD_NO_DOTENV = "1"
 
 Write-Host "Starting Bifrost on :$BifrostPort (first run downloads it, this can take a minute) ..." -ForegroundColor Cyan
 $log = Join-Path $appDir "bifrost.log"; $errLog = Join-Path $appDir "bifrost.err.log"

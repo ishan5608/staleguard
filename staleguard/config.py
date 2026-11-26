@@ -7,7 +7,8 @@ from dataclasses import dataclass, field
 try:
     from dotenv import load_dotenv
 
-    load_dotenv()
+    if not os.getenv("STALEGUARD_NO_DOTENV"):   # the live-demo script sets everything explicitly
+        load_dotenv()
 except ImportError:  # pragma: no cover
     pass
 

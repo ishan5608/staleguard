@@ -5,15 +5,31 @@
     "enable_logging": true
   },
   "providers": {
-    "anthropic": {
+    "gemini": {
       "keys": [
         {
-          "name": "anthropic-primary",
-          "value": "env.ANTHROPIC_API_KEY",
+          "name": "gemini",
+          "value": "env.GEMINI_API_KEY",
           "models": [
-            "claude-haiku-5-5",
-            "claude-sonnet-5-5",
-            "claude-opus-5-5"
+            "gemini-3.5-flash-lite",
+            "gemini-3.5-flash"
+          ],
+          "weight": 1.0
+        }
+      ],
+      "network_config": {
+        "max_retries": 2,
+        "retry_backoff_initial": 500,
+        "retry_backoff_max": 4000
+      }
+    },
+    "groq": {
+      "keys": [
+        {
+          "name": "groq",
+          "value": "env.GROQ_API_KEY",
+          "models": [
+            "openai/gpt-oss-120b"
           ],
           "weight": 1.0
         }
@@ -31,15 +47,25 @@
         "id": "vk-staleguard",
         "name": "StaleGuard verifier",
         "value": "sk-bf-staleguard-local",
-        "description": "Scoped key for StaleGuard - only the Claude models it needs, with a monthly budget",
+        "description": "Scoped key for StaleGuard - only the models it needs",
         "is_active": true,
         "provider_configs": [
           {
-            "provider": "anthropic",
+            "provider": "gemini",
             "weight": 1.0,
             "allowed_models": [
-              "claude-haiku-5-5",
-              "claude-sonnet-5-5"
+              "gemini-3.5-flash-lite",
+              "gemini-3.5-flash"
+            ],
+            "key_ids": [
+              "*"
+            ]
+          },
+          {
+            "provider": "groq",
+            "weight": 0.0,
+            "allowed_models": [
+              "openai/gpt-oss-120b"
             ],
             "key_ids": [
               "*"

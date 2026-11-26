@@ -45,7 +45,7 @@ with a freshness report attached.
 
 ```
                 ┌──────────────────────────── StaleGuard ─────────────────────────────┐
- LLM answer ──► │ 1. Claim extraction        Claude Haiku ──► Bifrost ──► Anthropic
+ LLM answer ──► │ 1. Claim extraction        fast model   ──► Bifrost ──► Gemini / Groq
                 │    (+ heuristic risk pre-pass: prices, versions, laws, roles, stats) │
                 │                                                                      │
                 │ 2. For each time-sensitive claim, in parallel:                       │
@@ -89,10 +89,11 @@ judge (version/price/status comparison over the retrieved evidence). With no API
 - Results are cached per (query, category) to avoid paying twice for duplicate claims.
 
 **Bifrost — every LLM call goes through the gateway** (`POST /v1/chat/completions`)
-- **Claude models only:** Claude Haiku (`anthropic/claude-haiku-5-5`) for extraction and rewriting, Claude
-  Sonnet (`anthropic/claude-sonnet-5-5`) for adjudication — configurable per env var.
-- **Automatic fallbacks:** every request carries a `fallbacks` list of other Claude models (Sonnet ↔ Haiku),
-  so a failed or rate-limited call is retried on the other model instead of breaking verification. Bifrost's
+- **Model routing on free tiers:** Gemini Flash-Lite (`gemini/gemini-3.5-flash-lite`) for extraction and
+  rewriting, Gemini Flash (`gemini/gemini-3.5-flash`) for adjudication, Groq as the fallback provider. Any
+  provider Bifrost supports works via env vars (e.g. Claude with `anthropic/claude-sonnet-5-5`).
+- **Automatic fallbacks:** every request carries a `fallbacks` list (the other Gemini model, then Groq), so a
+  failed or rate-limited call — common on free tiers — is retried elsewhere instead of breaking verification. Bifrost's
   `extra_fields.routing_info` is parsed so the UI's **call trace** shows which model actually answered and
   whether a fallback fired.
 - **Governance:** requests send a virtual key (`x-bf-vk`). The shipped `bifrost/data/config.json` scopes that
@@ -139,7 +140,7 @@ STALEGUARD_MODE=offline uvicorn staleguard.server:app --port 8000
 
 ### 2. Live mode (Tavily + Bifrost)
 ```bash
-cp .env.example .env        # add TAVILY_API_KEY and ANTHROPIC_API_KEY
+cp .env.example .env        # add TAVILY_API_KEY and GEMINI_API_KEY (both free), optionally GROQ_API_KEY
 
 # start Bifrost with the bundled config (providers, fallbacks, virtual key + budget)
 npx -y @maximhq/bifrost -app-dir ./bifrost/data
@@ -148,16 +149,21 @@ npx -y @maximhq/bifrost -app-dir ./bifrost/data
 uvicorn staleguard.server:app --port 8000
 ```
 
-### Live demo on Windows (Tavily + Bifrost + Claude) in one command
+### Live demo on Windows with free keys (Tavily + Bifrost + Gemini/Groq) in one command
+Put your keys in a `.env` file in the repo folder (it is git-ignored):
+```
+TAVILY_API_KEY=...     # https://app.tavily.com        (free tier)
+GEMINI_API_KEY=...     # https://aistudio.google.com   (free tier, primary model)
+GROQ_API_KEY=...       # https://console.groq.com      (free tier, Bifrost fallback; optional)
+```
+then run:
 ```powershell
-$env:TAVILY_API_KEY    = "tvly-..."      # https://app.tavily.com
-$env:ANTHROPIC_API_KEY = "sk-ant-..."    # https://console.anthropic.com
 powershell -ExecutionPolicy Bypass -File scripts\live-demo.ps1
 ```
-Instead of setting the variables you can put `TAVILY_API_KEY=...` and `ANTHROPIC_API_KEY=...` in a `.env` file
-in the repo folder (it is git-ignored). The script writes a Bifrost config for the Anthropic provider, starts Bifrost (`npx @maximhq/bifrost`, needs
-Node.js), waits for it, and runs StaleGuard in live mode: Claude Haiku extracts claims, Claude Sonnet judges
-them, and Bifrost falls back between the two. The call trace in the UI shows which model served each call.
+The script writes a Bifrost config for the providers you have keys for, starts Bifrost (`npx @maximhq/bifrost`,
+needs Node.js), waits for it, and runs StaleGuard in live mode. The call trace in the UI shows which provider
+and model served each call, and when Bifrost fell back. To use Claude instead, add `ANTHROPIC_API_KEY`
+(needs prepaid API credit) and `LLM_PROVIDER=anthropic`.
 
 ### 3. Everything with Docker Compose
 ```bash
@@ -172,8 +178,8 @@ cp .env.example .env && docker compose up --build
 | `TAVILY_API_KEY` | – | Tavily key |
 | `BIFROST_URL` | `http://localhost:8080` | Gateway URL |
 | `BIFROST_VIRTUAL_KEY` | – | Sent as `x-bf-vk` (budgets / model allow-list) |
-| `EXTRACT_MODEL` / `JUDGE_MODEL` | `anthropic/claude-haiku-5-5` / `anthropic/claude-sonnet-5-5` | Bifrost `provider/model` names |
-| `LLM_FALLBACKS` | `anthropic/claude-sonnet-5-5,anthropic/claude-haiku-5-5` | Fallback chain (the model being called is skipped) |
+| `EXTRACT_MODEL` / `JUDGE_MODEL` | `gemini/gemini-3.5-flash-lite` / `gemini/gemini-3.5-flash` | Bifrost `provider/model` names |
+| `LLM_FALLBACKS` | `gemini/gemini-3.5-flash,groq/openai/gpt-oss-120b` | Fallback chain (the model being called is skipped) |
 | `DEFAULT_KNOWLEDGE_DATE` | `2024-06` | Assumed knowledge date when the caller doesn't give one |
 | `TAVILY_SEARCH_DEPTH`, `TAVILY_MAX_RESULTS`, `STALEGUARD_CONCURRENCY` | `advanced`, `5`, `4` | Search tuning |
 
@@ -227,7 +233,7 @@ python -m staleguard.cli answer.txt --fail-under 70   # exit 1 if the answer is 
 from openai import OpenAI
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
 r = client.chat.completions.create(
-    model="anthropic/claude-haiku-5-5",
+    model="gemini/gemini-3.5-flash-lite",
     messages=[{"role": "user", "content": "How much does GitHub Copilot cost?"}],
     extra_body={"staleguard": {"knowledge_date": "2024-06", "replace_with_refreshed": True}},
 )

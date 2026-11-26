@@ -1,18 +1,16 @@
 <#
-  StaleGuard live demo on Windows: Tavily + Bifrost + Claude, in one command.
+  StaleGuard live demo on Windows: Tavily + Bifrost + LLM, in one command.
 
-  1. Keys:
-       Tavily     https://app.tavily.com               -> $env:TAVILY_API_KEY     (free tier available)
-       Anthropic  https://console.anthropic.com        -> $env:ANTHROPIC_API_KEY  (Claude models)
-  2. Put them in a .env file in the repo folder (or set them as env vars in PowerShell):
-       TAVILY_API_KEY=tvly-...
-       ANTHROPIC_API_KEY=sk-ant-...
-     then run:  powershell -ExecutionPolicy Bypass -File scripts\live-demo.ps1
-  3. Open http://localhost:8000  (Bifrost dashboard: http://localhost:8080)
+  1. Keys (put them in a .env file in the repo folder, one KEY=value per line, or set them as env vars):
+       TAVILY_API_KEY=...       https://app.tavily.com           (free tier)
+       GEMINI_API_KEY=...       https://aistudio.google.com      (free tier)   <- primary model
+       GROQ_API_KEY=...         https://console.groq.com/keys    (free tier)   <- Bifrost fallback (optional)
+       ANTHROPIC_API_KEY=...    https://console.anthropic.com    (prepaid credit; used only with LLM_PROVIDER=anthropic)
+  2. Run:  powershell -ExecutionPolicy Bypass -File scripts\live-demo.ps1
+  3. Open http://localhost:8000
 
-  Claude Haiku extracts claims and writes the corrected answer, Claude Sonnet judges each claim, and Bifrost
-  falls back from one Claude model to the other if a call fails. Override with $env:EXTRACT_MODEL /
-  $env:JUDGE_MODEL / $env:LLM_FALLBACKS (Bifrost "anthropic/<model>" names).
+  Every LLM call goes through Bifrost. The primary provider is chosen automatically (Gemini, then Groq),
+  or set LLM_PROVIDER=gemini|groq|anthropic. Bifrost falls back to the other providers you have keys for.
   Needs Node.js (for `npx @maximhq/bifrost`) and Python with requirements.txt installed.
 #>
 param([int]$Port = 8000, [int]$BifrostPort = 8080)
@@ -29,20 +27,37 @@ if (Test-Path ".env") {
   }
 }
 
-if (-not $env:TAVILY_API_KEY)    { Write-Host "Set `$env:TAVILY_API_KEY first (https://app.tavily.com)." -ForegroundColor Red; exit 1 }
-if (-not $env:ANTHROPIC_API_KEY) { Write-Host "Set `$env:ANTHROPIC_API_KEY first (https://console.anthropic.com)." -ForegroundColor Red; exit 1 }
+if (-not $env:TAVILY_API_KEY) { Write-Host "Set TAVILY_API_KEY in .env first (https://app.tavily.com)." -ForegroundColor Red; exit 1 }
 if (-not (Get-Command npx -ErrorAction SilentlyContinue)) { Write-Host "Node.js is required for Bifrost: https://nodejs.org" -ForegroundColor Red; exit 1 }
 
-# Claude models only: anything else (e.g. old openai/... lines in .env) is replaced with the defaults
-if ($env:EXTRACT_MODEL -notlike "anthropic/*") { $env:EXTRACT_MODEL = "anthropic/claude-haiku-5-5" }
-if ($env:JUDGE_MODEL   -notlike "anthropic/*") { $env:JUDGE_MODEL   = "anthropic/claude-sonnet-5-5" }
-$fallbacks = @(($env:LLM_FALLBACKS -split ",") | ForEach-Object { $_.Trim() } |
-               Where-Object { $_ -like "anthropic/*" -and $_ -notmatch "claude-(3|instant)" })   # drop retired models
-$env:LLM_FALLBACKS = if ($fallbacks.Count) { $fallbacks -join "," } else { "anthropic/claude-sonnet-5-5,anthropic/claude-haiku-5-5" }
-$models = @($env:EXTRACT_MODEL, $env:JUDGE_MODEL) + ($env:LLM_FALLBACKS -split ",") |
-          Where-Object { $_ } | ForEach-Object { ($_ -split "/", 2)[-1].Trim() } | Sort-Object -Unique
+# Provider catalogue: Bifrost provider name -> key variable and the models StaleGuard uses on it
+$catalog = [ordered]@{
+  gemini    = @{ key = "GEMINI_API_KEY";    extract = "gemini-3.5-flash-lite"; judge = "gemini-3.5-flash" }
+  groq      = @{ key = "GROQ_API_KEY";      extract = "openai/gpt-oss-120b";   judge = "openai/gpt-oss-120b" }
+  anthropic = @{ key = "ANTHROPIC_API_KEY"; extract = "claude-haiku-5-5";      judge = "claude-sonnet-5-5" }
+}
+$available = @($catalog.Keys | Where-Object { [Environment]::GetEnvironmentVariable($catalog[$_].key) })
+# Anthropic's API needs prepaid credit (a Claude Pro plan doesn't cover it), so it is only used when asked for
+$usable = @($available | Where-Object { $_ -ne "anthropic" -or $env:LLM_PROVIDER -eq "anthropic" })
+if (-not $usable.Count) {
+  Write-Host "Add GEMINI_API_KEY (https://aistudio.google.com) and/or GROQ_API_KEY (https://console.groq.com) to .env - both are free." -ForegroundColor Red; exit 1
+}
+$primary = if ($env:LLM_PROVIDER -and $usable -contains $env:LLM_PROVIDER) { $env:LLM_PROVIDER } else { $usable[0] }
+$others = @($usable | Where-Object { $_ -ne $primary })
 
-# Bifrost config: the Anthropic provider only. The key stays in the env var, never in the file.
+# Models: always derived from the providers you have keys for (old model lines in .env are ignored)
+$env:EXTRACT_MODEL = "$primary/$($catalog[$primary].extract)"
+$env:JUDGE_MODEL   = "$primary/$($catalog[$primary].judge)"
+$fb = @("$primary/$($catalog[$primary].judge)", "$primary/$($catalog[$primary].extract)") +
+      @($others | ForEach-Object { "$_/$($catalog[$_].judge)" })
+$env:LLM_FALLBACKS = ($fb | Select-Object -Unique) -join ","
+
+# Bifrost config: only the providers in use. Keys stay in env vars, never in the file.
+$providers = [ordered]@{}
+foreach ($p in $usable) {
+  $c = $catalog[$p]
+  $providers[$p] = @{ keys = @(@{ name = $p; value = "env.$($c.key)"; models = @(@($c.extract, $c.judge) | Select-Object -Unique); weight = 1.0 }) }
+}
 $appDir = Join-Path (Get-Location) "bifrost\live-demo"
 New-Item -ItemType Directory -Force -Path $appDir | Out-Null
 $config = [ordered]@{
@@ -50,7 +65,7 @@ $config = [ordered]@{
   client       = @{ enforce_auth_on_inference = $false }
   # File-only mode: config.json is the source of truth on every start (no settings left over in config.db).
   config_store = @{ enabled = $false }
-  providers    = @{ anthropic = @{ keys = @(@{ name = "anthropic"; value = "env.ANTHROPIC_API_KEY"; models = @($models); weight = 1.0 }) } }
+  providers    = $providers
 }
 # Windows PowerShell's "-Encoding utf8" adds a byte-order mark, which Bifrost's JSON parser rejects
 [System.IO.File]::WriteAllText((Join-Path $appDir "config.json"), ($config | ConvertTo-Json -Depth 8), (New-Object System.Text.UTF8Encoding $false))

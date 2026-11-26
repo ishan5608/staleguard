@@ -30,7 +30,7 @@ class Claim(BaseModel):
     text: str = Field(description="The atomic, self-contained claim")
     span: str = Field("", description="Exact substring of the answer the claim came from")
     category: Category
-    subject: str = ""            # e.g. "OpenAI GPT-4o API"
+    subject: str = ""            # e.g. "React", "ChatGPT Plus"
     attribute: str = ""          # e.g. "input price per 1M tokens"
     value: str = ""              # e.g. "$5.00"
     time_sensitive: bool = True

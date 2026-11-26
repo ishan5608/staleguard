@@ -45,7 +45,7 @@ with a freshness report attached.
 
 ```
                 ┌──────────────────────────── StaleGuard ─────────────────────────────┐
- LLM answer ──► │ 1. Claim extraction        cheap model  ──► Bifrost ──► OpenAI / Anthropic / Groq
+ LLM answer ──► │ 1. Claim extraction        Claude Haiku ──► Bifrost ──► Anthropic
                 │    (+ heuristic risk pre-pass: prices, versions, laws, roles, stats) │
                 │                                                                      │
                 │ 2. For each time-sensitive claim, in parallel:                       │
@@ -89,12 +89,12 @@ judge (version/price/status comparison over the retrieved evidence). With no API
 - Results are cached per (query, category) to avoid paying twice for duplicate claims.
 
 **Bifrost — every LLM call goes through the gateway** (`POST /v1/chat/completions`)
-- **Model routing:** a cheap model (`openai/gpt-4o-mini`) for extraction and rewriting, a stronger one
-  (`openai/gpt-4o`) for adjudication — configurable per env var, any provider Bifrost supports.
-- **Automatic fallbacks:** every request carries a `fallbacks` list
-  (`anthropic/claude-3-5-haiku-latest`, `groq/llama-3.3-70b-versatile`). A provider outage doesn't stop
-  verification. Bifrost's `extra_fields.routing_info` is parsed so the UI's **call trace** shows which
-  provider actually answered and whether a fallback fired.
+- **Claude models only:** Claude Haiku (`anthropic/claude-haiku-5-5`) for extraction and rewriting, Claude
+  Sonnet (`anthropic/claude-sonnet-5-5`) for adjudication — configurable per env var.
+- **Automatic fallbacks:** every request carries a `fallbacks` list of other Claude models (Sonnet ↔ Haiku),
+  so a failed or rate-limited call is retried on the other model instead of breaking verification. Bifrost's
+  `extra_fields.routing_info` is parsed so the UI's **call trace** shows which model actually answered and
+  whether a fallback fired.
 - **Governance:** requests send a virtual key (`x-bf-vk`). The shipped `bifrost/data/config.json` scopes that
   key to just the models StaleGuard needs and attaches a **monthly budget** — so a verification service
   can't run up an unbounded bill.
@@ -139,7 +139,7 @@ STALEGUARD_MODE=offline uvicorn staleguard.server:app --port 8000
 
 ### 2. Live mode (Tavily + Bifrost)
 ```bash
-cp .env.example .env        # add TAVILY_API_KEY and at least one provider key (OPENAI_API_KEY, ...)
+cp .env.example .env        # add TAVILY_API_KEY and ANTHROPIC_API_KEY
 
 # start Bifrost with the bundled config (providers, fallbacks, virtual key + budget)
 npx -y @maximhq/bifrost -app-dir ./bifrost/data
@@ -147,6 +147,16 @@ npx -y @maximhq/bifrost -app-dir ./bifrost/data
 
 uvicorn staleguard.server:app --port 8000
 ```
+
+### Live demo on Windows (Tavily + Bifrost + Claude) in one command
+```powershell
+$env:TAVILY_API_KEY    = "tvly-..."      # https://app.tavily.com
+$env:ANTHROPIC_API_KEY = "sk-ant-..."    # https://console.anthropic.com
+powershell -ExecutionPolicy Bypass -File scripts\live-demo.ps1
+```
+The script writes a Bifrost config for the Anthropic provider, starts Bifrost (`npx @maximhq/bifrost`, needs
+Node.js), waits for it, and runs StaleGuard in live mode: Claude Haiku extracts claims, Claude Sonnet judges
+them, and Bifrost falls back between the two. The call trace in the UI shows which model served each call.
 
 ### 3. Everything with Docker Compose
 ```bash
@@ -161,8 +171,8 @@ cp .env.example .env && docker compose up --build
 | `TAVILY_API_KEY` | – | Tavily key |
 | `BIFROST_URL` | `http://localhost:8080` | Gateway URL |
 | `BIFROST_VIRTUAL_KEY` | – | Sent as `x-bf-vk` (budgets / model allow-list) |
-| `EXTRACT_MODEL` / `JUDGE_MODEL` | `openai/gpt-4o-mini` / `openai/gpt-4o` | Bifrost `provider/model` names |
-| `LLM_FALLBACKS` | `anthropic/claude-3-5-haiku-latest,groq/llama-3.3-70b-versatile` | Fallback chain |
+| `EXTRACT_MODEL` / `JUDGE_MODEL` | `anthropic/claude-haiku-5-5` / `anthropic/claude-sonnet-5-5` | Bifrost `provider/model` names |
+| `LLM_FALLBACKS` | `anthropic/claude-sonnet-5-5,anthropic/claude-haiku-5-5` | Fallback chain (the model being called is skipped) |
 | `DEFAULT_KNOWLEDGE_DATE` | `2024-06` | Assumed knowledge date when the caller doesn't give one |
 | `TAVILY_SEARCH_DEPTH`, `TAVILY_MAX_RESULTS`, `STALEGUARD_CONCURRENCY` | `advanced`, `5`, `4` | Search tuning |
 
@@ -216,7 +226,7 @@ python -m staleguard.cli answer.txt --fail-under 70   # exit 1 if the answer is 
 from openai import OpenAI
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
 r = client.chat.completions.create(
-    model="openai/gpt-4o-mini",
+    model="anthropic/claude-haiku-5-5",
     messages=[{"role": "user", "content": "How much does GitHub Copilot cost?"}],
     extra_body={"staleguard": {"knowledge_date": "2024-06", "replace_with_refreshed": True}},
 )

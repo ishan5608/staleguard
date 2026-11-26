@@ -99,8 +99,9 @@ class BifrostClient:
         entry.tokens = int((data.get("usage") or {}).get("total_tokens") or 0)
         extra = data.get("extra_fields") or {}
         routing = extra.get("routing_info") or {}
-        provider = extra.get("provider") or routing.get("provider") or ""
-        served_model = data.get("model") or extra.get("model_requested") or model
+        # routing_info names the provider/model that actually answered (it differs from the request on fallback)
+        provider = routing.get("provider") or extra.get("provider") or ""
+        served_model = routing.get("model") or data.get("model") or extra.get("model_requested") or model
         entry.served_by = f"{provider}/{served_model}".strip("/") if provider else served_model
         entry.fallback_used = bool(routing.get("is_fallback"))
         entry.cached = bool((extra.get("cache_debug") or {}).get("cache_hit"))

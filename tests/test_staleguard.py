@@ -123,17 +123,19 @@ def _bifrost_handler(seen):
                 {"text": "Python was created by Guido van Rossum.", "span": "Python was created by Guido van Rossum.",
                  "category": "stable", "time_sensitive": False, "subject": "Python", "attribute": "creator",
                  "value": "Guido van Rossum", "search_query": ""}]}
-            extra = {"provider": "openai", "routing_info": {"is_fallback": False}}
+            extra = {"provider": "anthropic", "routing_info": {"is_fallback": False}}
         elif "fact-checker" in system:
             content = {"verdict": "outdated", "current_value": "React 19", "confidence": 0.92,
                        "explanation": "React 19 became the stable major in Dec 2024 [1].", "stances": {"1": "contradicts"}}
-            # pretend the primary provider was down and Bifrost fell back
-            extra = {"provider": "anthropic", "routing_info": {"is_fallback": True, "primary_provider": "openai"}}
+            # pretend Sonnet errored and Bifrost fell back to Haiku
+            extra = {"routing_info": {"provider": "anthropic", "model": "claude-haiku-5-5", "is_fallback": True,
+                                      "primary_provider": "anthropic", "primary_model": "claude-sonnet-5-5"}}
         else:
             content = {"answer": "React 19 is the current major version of React [1]. Python was created by Guido van Rossum."}
-            extra = {"provider": "openai"}
+            extra = {"provider": "anthropic"}
+        served = "claude-haiku-5-5" if (extra.get("routing_info") or {}).get("is_fallback") else body["model"].split("/")[-1]
         return httpx.Response(200, json={
-            "model": body["model"].split("/")[-1], "choices": [{"message": {"role": "assistant", "content": json.dumps(content)}}],
+            "model": served, "choices": [{"message": {"role": "assistant", "content": json.dumps(content)}}],
             "usage": {"total_tokens": 321}, "extra_fields": extra})
     return handler
 
@@ -150,8 +152,8 @@ def _tavily_handler(seen):
 def test_live_pipeline_through_bifrost_and_tavily():
     llm_seen, search_seen = [], []
     s = Settings(mode="live", tavily_api_key="tvly-test", bifrost_url="http://bifrost.test",
-                 bifrost_virtual_key="sk-bf-demo", extract_model="openai/gpt-4o-mini", judge_model="openai/gpt-4o",
-                 fallbacks=["anthropic/claude-3-5-haiku-latest"])
+                 bifrost_virtual_key="sk-bf-demo", extract_model="anthropic/claude-haiku-5-5", judge_model="anthropic/claude-sonnet-5-5",
+                 fallbacks=["anthropic/claude-sonnet-5-5", "anthropic/claude-haiku-5-5"])
     llm = BifrostClient(s, httpx.AsyncClient(transport=httpx.MockTransport(_bifrost_handler(llm_seen))))
     search = TavilyClient(s, httpx.AsyncClient(transport=httpx.MockTransport(_tavily_handler(search_seen))))
     g = StaleGuard(s, llm=llm, search=search)
@@ -167,11 +169,12 @@ def test_live_pipeline_through_bifrost_and_tavily():
     # every LLM call went to Bifrost's OpenAI-compatible endpoint with fallbacks + virtual key
     assert all(c["url"].endswith("/v1/chat/completions") for c in llm_seen)
     assert all(c["headers"]["x-bf-vk"] == "sk-bf-demo" for c in llm_seen)
-    assert all(c["body"]["fallbacks"] == ["anthropic/claude-3-5-haiku-latest"] for c in llm_seen)
-    assert {c["body"]["model"] for c in llm_seen} == {"openai/gpt-4o-mini", "openai/gpt-4o"}
+    # the fallback chain never includes the model being called
+    assert all(c["body"]["model"] not in c["body"]["fallbacks"] and c["body"]["fallbacks"] for c in llm_seen)
+    assert {c["body"]["model"] for c in llm_seen} == {"anthropic/claude-haiku-5-5", "anthropic/claude-sonnet-5-5"}
     # Bifrost routing info is surfaced in the trace
     judge = next(t for t in rep.trace if t.purpose.startswith("judge"))
-    assert judge.fallback_used and judge.served_by.startswith("anthropic/")
+    assert judge.fallback_used and judge.served_by == "anthropic/claude-haiku-5-5"
     assert rep.stats["fallbacks_used"] == 1 and rep.stats["tokens"] > 0
     # Tavily got a recency-bounded search, bearer auth, and wasn't asked about the stable claim
     assert len(search_seen) == 1

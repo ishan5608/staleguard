@@ -22,12 +22,13 @@ class Settings:
     # Bifrost gateway (OpenAI-compatible). All LLM traffic goes through it.
     bifrost_url: str = field(default_factory=lambda: os.getenv("BIFROST_URL", "http://localhost:8080"))
     bifrost_virtual_key: str = field(default_factory=lambda: os.getenv("BIFROST_VIRTUAL_KEY", ""))
-    # Cheap/fast model for claim extraction, stronger model for adjudication.
-    extract_model: str = field(default_factory=lambda: os.getenv("EXTRACT_MODEL", "openai/gpt-4o-mini"))
-    judge_model: str = field(default_factory=lambda: os.getenv("JUDGE_MODEL", "openai/gpt-4o"))
-    # Bifrost tries these, in order, if the primary provider fails.
+    # Claude models only, all routed through Bifrost: fast Haiku for extraction and rewriting,
+    # Sonnet for adjudication.
+    extract_model: str = field(default_factory=lambda: os.getenv("EXTRACT_MODEL", "anthropic/claude-haiku-5-5"))
+    judge_model: str = field(default_factory=lambda: os.getenv("JUDGE_MODEL", "anthropic/claude-sonnet-5-5"))
+    # Bifrost tries these, in order, if the primary model fails (the model itself is skipped).
     fallbacks: list[str] = field(default_factory=lambda: _list(
-        "LLM_FALLBACKS", "anthropic/claude-3-5-haiku-latest,groq/llama-3.3-70b-versatile"))
+        "LLM_FALLBACKS", "anthropic/claude-sonnet-5-5,anthropic/claude-haiku-5-5"))
 
     tavily_api_key: str = field(default_factory=lambda: os.getenv("TAVILY_API_KEY", ""))
     tavily_url: str = field(default_factory=lambda: os.getenv("TAVILY_URL", "https://api.tavily.com"))

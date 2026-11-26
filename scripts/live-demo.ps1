@@ -36,7 +36,8 @@ if (-not (Get-Command npx -ErrorAction SilentlyContinue)) { Write-Host "Node.js 
 # Claude models only: anything else (e.g. old openai/... lines in .env) is replaced with the defaults
 if ($env:EXTRACT_MODEL -notlike "anthropic/*") { $env:EXTRACT_MODEL = "anthropic/claude-haiku-5-5" }
 if ($env:JUDGE_MODEL   -notlike "anthropic/*") { $env:JUDGE_MODEL   = "anthropic/claude-sonnet-5-5" }
-$fallbacks = @(($env:LLM_FALLBACKS -split ",") | ForEach-Object { $_.Trim() } | Where-Object { $_ -like "anthropic/*" })
+$fallbacks = @(($env:LLM_FALLBACKS -split ",") | ForEach-Object { $_.Trim() } |
+               Where-Object { $_ -like "anthropic/*" -and $_ -notmatch "claude-(3|instant)" })   # drop retired models
 $env:LLM_FALLBACKS = if ($fallbacks.Count) { $fallbacks -join "," } else { "anthropic/claude-sonnet-5-5,anthropic/claude-haiku-5-5" }
 $models = @($env:EXTRACT_MODEL, $env:JUDGE_MODEL) + ($env:LLM_FALLBACKS -split ",") |
           Where-Object { $_ } | ForEach-Object { ($_ -split "/", 2)[-1].Trim() } | Sort-Object -Unique
@@ -44,7 +45,13 @@ $models = @($env:EXTRACT_MODEL, $env:JUDGE_MODEL) + ($env:LLM_FALLBACKS -split "
 # Bifrost config: the Anthropic provider only. The key stays in the env var, never in the file.
 $appDir = Join-Path (Get-Location) "bifrost\live-demo"
 New-Item -ItemType Directory -Force -Path $appDir | Out-Null
-$config = @{ providers = @{ anthropic = @{ keys = @(@{ name = "anthropic"; value = "env.ANTHROPIC_API_KEY"; models = @($models); weight = 1.0 }) } } }
+$config = [ordered]@{
+  # Newer Bifrost builds require a virtual key on every request unless this is off; this demo uses none.
+  client       = @{ enforce_auth_on_inference = $false }
+  # File-only mode: config.json is the source of truth on every start (no settings left over in config.db).
+  config_store = @{ enabled = $false }
+  providers    = @{ anthropic = @{ keys = @(@{ name = "anthropic"; value = "env.ANTHROPIC_API_KEY"; models = @($models); weight = 1.0 }) } }
+}
 # Windows PowerShell's "-Encoding utf8" adds a byte-order mark, which Bifrost's JSON parser rejects
 [System.IO.File]::WriteAllText((Join-Path $appDir "config.json"), ($config | ConvertTo-Json -Depth 8), (New-Object System.Text.UTF8Encoding $false))
 

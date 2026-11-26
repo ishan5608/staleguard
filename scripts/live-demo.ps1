@@ -43,25 +43,42 @@ $models = @($env:EXTRACT_MODEL, $env:JUDGE_MODEL) + ($env:LLM_FALLBACKS -split "
 $appDir = Join-Path (Get-Location) "bifrost\live-demo"
 New-Item -ItemType Directory -Force -Path $appDir | Out-Null
 $config = @{ providers = @{ anthropic = @{ keys = @(@{ name = "anthropic"; value = "env.ANTHROPIC_API_KEY"; models = @($models); weight = 1.0 }) } } }
-$config | ConvertTo-Json -Depth 8 | Set-Content -Encoding utf8 (Join-Path $appDir "config.json")
+# Windows PowerShell's "-Encoding utf8" adds a byte-order mark, which Bifrost's JSON parser rejects
+[System.IO.File]::WriteAllText((Join-Path $appDir "config.json"), ($config | ConvertTo-Json -Depth 8), (New-Object System.Text.UTF8Encoding $false))
 
 $env:STALEGUARD_MODE = "live"
 $env:BIFROST_URL = "http://localhost:$BifrostPort"
 $env:BIFROST_VIRTUAL_KEY = ""
 
-Write-Host "Starting Bifrost on :$BifrostPort ..." -ForegroundColor Cyan
-$bifrost = Start-Process -FilePath "npx.cmd" -ArgumentList @("-y", "@maximhq/bifrost", "-app-dir", "`"$appDir`"", "-port", "$BifrostPort") -PassThru
+Write-Host "Starting Bifrost on :$BifrostPort (first run downloads it, this can take a minute) ..." -ForegroundColor Cyan
+$log = Join-Path $appDir "bifrost.log"; $errLog = Join-Path $appDir "bifrost.err.log"
+$bifrost = Start-Process -FilePath "npx.cmd" -ArgumentList @("-y", "@maximhq/bifrost", "-app-dir", "`"$appDir`"", "-port", "$BifrostPort", "-host", "127.0.0.1") `
+           -WindowStyle Hidden -RedirectStandardOutput $log -RedirectStandardError $errLog -PassThru
+
+function Test-Port([int]$p) {
+  $c = New-Object System.Net.Sockets.TcpClient
+  try { $c.ConnectAsync("127.0.0.1", $p).Wait(800) -and $c.Connected } catch { $false } finally { $c.Close() }
+}
+function Show-BifrostLog {
+  Write-Host "---- Bifrost output ----" -ForegroundColor Yellow
+  foreach ($f in @($log, $errLog)) { if (Test-Path $f) { Get-Content $f -Tail 25 } }
+  Write-Host "------------------------" -ForegroundColor Yellow
+}
+
 $up = $false
-foreach ($i in 1..90) {
-  foreach ($path in @("/health", "/")) {
-    try { Invoke-WebRequest -UseBasicParsing "http://localhost:$BifrostPort$path" -TimeoutSec 2 | Out-Null; $up = $true; break } catch {}
-  }
-  if ($up) { break }
+foreach ($i in 1..180) {
+  if (Test-Port $BifrostPort) { $up = $true; break }
+  if ($bifrost.HasExited) { Write-Host "Bifrost exited (code $($bifrost.ExitCode))." -ForegroundColor Red; Show-BifrostLog; exit 1 }
+  if ($i % 10 -eq 0) { Write-Host "  still waiting for Bifrost ($i s)..." }
   Start-Sleep 1
 }
-if (-not $up) { Write-Host "Bifrost did not come up on :$BifrostPort - check its window for errors." -ForegroundColor Red; exit 1 }
+if (-not $up) { Write-Host "Bifrost did not come up on :$BifrostPort within 3 minutes." -ForegroundColor Red; Show-BifrostLog; exit 1 }
+$env:BIFROST_URL = "http://127.0.0.1:$BifrostPort"
 Write-Host "Bifrost is up. Extract: $env:EXTRACT_MODEL  Judge: $env:JUDGE_MODEL  Fallbacks: $env:LLM_FALLBACKS" -ForegroundColor Green
 
 Write-Host "Starting StaleGuard on http://localhost:$Port ..." -ForegroundColor Cyan
 try { python -m uvicorn staleguard.server:app --port $Port }
-finally { if ($bifrost -and -not $bifrost.HasExited) { Stop-Process -Id $bifrost.Id -Force } }
+finally {
+  # npx starts Bifrost as a child process: stop the whole tree
+  if ($bifrost -and -not $bifrost.HasExited) { & taskkill /PID $bifrost.Id /T /F | Out-Null }
+}

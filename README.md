@@ -154,7 +154,8 @@ $env:TAVILY_API_KEY    = "tvly-..."      # https://app.tavily.com
 $env:ANTHROPIC_API_KEY = "sk-ant-..."    # https://console.anthropic.com
 powershell -ExecutionPolicy Bypass -File scripts\live-demo.ps1
 ```
-The script writes a Bifrost config for the Anthropic provider, starts Bifrost (`npx @maximhq/bifrost`, needs
+Instead of setting the variables you can put `TAVILY_API_KEY=...` and `ANTHROPIC_API_KEY=...` in a `.env` file
+in the repo folder (it is git-ignored). The script writes a Bifrost config for the Anthropic provider, starts Bifrost (`npx @maximhq/bifrost`, needs
 Node.js), waits for it, and runs StaleGuard in live mode: Claude Haiku extracts claims, Claude Sonnet judges
 them, and Bifrost falls back between the two. The call trace in the UI shows which model served each call.
 

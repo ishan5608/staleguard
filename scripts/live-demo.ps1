@@ -4,10 +4,10 @@
   1. Keys:
        Tavily     https://app.tavily.com               -> $env:TAVILY_API_KEY     (free tier available)
        Anthropic  https://console.anthropic.com        -> $env:ANTHROPIC_API_KEY  (Claude models)
-  2. In PowerShell, from the repo folder:
-       $env:TAVILY_API_KEY    = "tvly-..."
-       $env:ANTHROPIC_API_KEY = "sk-ant-..."
-       powershell -ExecutionPolicy Bypass -File scripts\live-demo.ps1
+  2. Put them in a .env file in the repo folder (or set them as env vars in PowerShell):
+       TAVILY_API_KEY=tvly-...
+       ANTHROPIC_API_KEY=sk-ant-...
+     then run:  powershell -ExecutionPolicy Bypass -File scripts\live-demo.ps1
   3. Open http://localhost:8000  (Bifrost dashboard: http://localhost:8080)
 
   Claude Haiku extracts claims and writes the corrected answer, Claude Sonnet judges each claim, and Bifrost
@@ -18,6 +18,16 @@
 param([int]$Port = 8000, [int]$BifrostPort = 8080)
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path $PSScriptRoot -Parent)
+
+# Keys can also live in a .env file next to README.md (KEY=value per line); env vars already set win.
+if (Test-Path ".env") {
+  foreach ($line in Get-Content ".env") {
+    if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$' -and -not $line.TrimStart().StartsWith("#")) {
+      $name = $Matches[1]; $value = $Matches[2].Trim('"').Trim("'")
+      if ($value -and -not [Environment]::GetEnvironmentVariable($name)) { Set-Item -Path "env:$name" -Value $value }
+    }
+  }
+}
 
 if (-not $env:TAVILY_API_KEY)    { Write-Host "Set `$env:TAVILY_API_KEY first (https://app.tavily.com)." -ForegroundColor Red; exit 1 }
 if (-not $env:ANTHROPIC_API_KEY) { Write-Host "Set `$env:ANTHROPIC_API_KEY first (https://console.anthropic.com)." -ForegroundColor Red; exit 1 }

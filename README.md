@@ -89,11 +89,11 @@ judge (version/price/status comparison over the retrieved evidence). With no API
 - Results are cached per (query, category) to avoid paying twice for duplicate claims.
 
 **Bifrost — every LLM call goes through the gateway** (`POST /v1/chat/completions`)
-- **Model routing on free tiers:** Gemini Flash-Lite (`gemini/gemini-3.5-flash-lite`) for extraction and
-  rewriting, Gemini Flash (`gemini/gemini-3.5-flash`) for adjudication, Groq as the fallback provider. Any
+- **Model routing across two free providers:** Gemini Flash-Lite (`gemini/gemini-3.5-flash-lite`) for
+  extraction and rewriting, Groq's `openai/gpt-oss-120b` (`groq/openai/gpt-oss-120b`) for adjudication. Any
   provider Bifrost supports works via env vars (e.g. Claude with `anthropic/claude-sonnet-5-5`).
-- **Automatic fallbacks:** every request carries a `fallbacks` list (the other Gemini model, then Groq), so a
-  failed or rate-limited call — common on free tiers — is retried elsewhere instead of breaking verification. Bifrost's
+- **Automatic fallbacks:** every request carries a `fallbacks` list pointing at the other provider, so a failed
+  or rate-limited call — common on free tiers — is retried there instead of breaking verification. Bifrost's
   `extra_fields.routing_info` is parsed so the UI's **call trace** shows which model actually answered and
   whether a fallback fired.
 - **Governance:** requests send a virtual key (`x-bf-vk`). The shipped `bifrost/data/config.json` scopes that
@@ -178,8 +178,8 @@ cp .env.example .env && docker compose up --build
 | `TAVILY_API_KEY` | – | Tavily key |
 | `BIFROST_URL` | `http://localhost:8080` | Gateway URL |
 | `BIFROST_VIRTUAL_KEY` | – | Sent as `x-bf-vk` (budgets / model allow-list) |
-| `EXTRACT_MODEL` / `JUDGE_MODEL` | `gemini/gemini-3.5-flash-lite` / `gemini/gemini-3.5-flash` | Bifrost `provider/model` names |
-| `LLM_FALLBACKS` | `gemini/gemini-3.5-flash,groq/openai/gpt-oss-120b` | Fallback chain (the model being called is skipped) |
+| `EXTRACT_MODEL` / `JUDGE_MODEL` | `gemini/gemini-3.5-flash-lite` / `groq/openai/gpt-oss-120b` | Bifrost `provider/model` names |
+| `LLM_FALLBACKS` | `gemini/gemini-3.5-flash-lite,groq/openai/gpt-oss-120b` | Fallback chain (the model being called is skipped) |
 | `DEFAULT_KNOWLEDGE_DATE` | `2024-06` | Assumed knowledge date when the caller doesn't give one |
 | `TAVILY_SEARCH_DEPTH`, `TAVILY_MAX_RESULTS`, `STALEGUARD_CONCURRENCY` | `advanced`, `5`, `4` | Search tuning |
 

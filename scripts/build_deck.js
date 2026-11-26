@@ -54,8 +54,8 @@ tb(s, [
 tb(s, "Bifrost — resilient, governed LLM calls", { x: 7.1, y: 1.85, w: 5.4, h: 0.5, fontSize: 22, bold: true, fontFace: "Cambria", color: "2B4ACB" });
 tb(s, [
   { text: "Every LLM call goes through /v1/chat/completions", options: { bullet: true, breakLine: true } },
-  { text: "Gemini Flash-Lite extracts, Gemini Flash judges", options: { bullet: true, breakLine: true } },
-  { text: "Automatic fallback to Groq on errors and rate limits", options: { bullet: true, breakLine: true } },
+  { text: "Gemini Flash-Lite extracts, Groq gpt-oss-120b judges", options: { bullet: true, breakLine: true } },
+  { text: "Each provider falls back to the other on errors", options: { bullet: true, breakLine: true } },
   { text: "Virtual key (x-bf-vk) scoped to needed models, monthly budget", options: { bullet: true, breakLine: true } },
   { text: "Routing info surfaced in the UI call trace", options: { bullet: true } }], { x: 7.1, y: 2.55, w: 5.3, h: 3.8, fontSize: 15, paraSpaceAfter: 8 });
 

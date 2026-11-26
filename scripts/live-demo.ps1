@@ -32,7 +32,7 @@ if (-not (Get-Command npx -ErrorAction SilentlyContinue)) { Write-Host "Node.js 
 
 # Provider catalogue: Bifrost provider name -> key variable and the models StaleGuard uses on it
 $catalog = [ordered]@{
-  gemini    = @{ key = "GEMINI_API_KEY";    extract = "gemini-3.5-flash-lite"; judge = "gemini-3.5-flash" }
+  gemini    = @{ key = "GEMINI_API_KEY";    extract = "gemini-3.5-flash-lite"; judge = "gemini-3.5-flash-lite" }
   groq      = @{ key = "GROQ_API_KEY";      extract = "openai/gpt-oss-120b";   judge = "openai/gpt-oss-120b" }
   anthropic = @{ key = "ANTHROPIC_API_KEY"; extract = "claude-haiku-5-5";      judge = "claude-sonnet-5-5" }
 }
@@ -45,11 +45,16 @@ if (-not $usable.Count) {
 $primary = if ($env:LLM_PROVIDER -and $usable -contains $env:LLM_PROVIDER) { $env:LLM_PROVIDER } else { $usable[0] }
 $others = @($usable | Where-Object { $_ -ne $primary })
 
-# Models: always derived from the providers you have keys for (old model lines in .env are ignored)
+# Models: always derived from the providers you have keys for (old model lines in .env are ignored).
+# With two providers, extraction runs on the primary and judging on the second, and each falls back to
+# the other through Bifrost - Gemini's free-tier Flash model is too slow for interactive use.
 $env:EXTRACT_MODEL = "$primary/$($catalog[$primary].extract)"
-$env:JUDGE_MODEL   = "$primary/$($catalog[$primary].judge)"
-$fb = @("$primary/$($catalog[$primary].judge)", "$primary/$($catalog[$primary].extract)") +
-      @($others | ForEach-Object { "$_/$($catalog[$_].judge)" })
+if ($others.Count) {
+  $env:JUDGE_MODEL = "$($others[0])/$($catalog[$others[0]].judge)"
+} else {
+  $env:JUDGE_MODEL = "$primary/$($catalog[$primary].judge)"
+}
+$fb = @($env:EXTRACT_MODEL, $env:JUDGE_MODEL) + @($others | ForEach-Object { "$_/$($catalog[$_].extract)" })
 $env:LLM_FALLBACKS = ($fb | Select-Object -Unique) -join ","
 
 # Bifrost config: only the providers in use. Keys stay in env vars, never in the file.
